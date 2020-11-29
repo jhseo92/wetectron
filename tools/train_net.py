@@ -79,7 +79,7 @@ def train(cfg, local_rank, distributed, use_tensorboard=False):
             delimiter="  ")
     else:
         meters = MetricLogger(delimiter="  ")
-        
+    #import IPython; IPython.embed()
     do_train(
         model,
         data_loader,
@@ -142,7 +142,7 @@ def train_cdb(cfg, local_rank, distributed, use_tensorboard=False):
         is_distributed=distributed,
         start_iter=arguments["iteration"],
     )
-    
+
     if use_tensorboard:
         meters = TensorboardLogger(
             log_dir=os.path.join(cfg['OUTPUT_DIR'], 'log/'),

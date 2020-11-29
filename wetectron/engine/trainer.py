@@ -48,7 +48,7 @@ def update_momentum(optimizer, cur_lr, new_lr, logger, SCALE_MOMENTUM_THRESHOLD 
         for p_key in param_keys:
             param_state = optimizer.state[p_key]
             if 'momentum_buffer' in param_state:
-                param_state['momentum_buffer'] *= correction    
+                param_state['momentum_buffer'] *= correction
 
 def do_train(
     model,
@@ -69,7 +69,7 @@ def do_train(
     model.train()
     start_training_time = time.time()
     end = time.time()
-
+    #import IPython; IPython.embed()
     for iteration, (images, targets, rois, _) in enumerate(data_loader, start_iter):
         if any(len(target) < 1 for target in targets):
             logger.error(f"Iteration={iteration + 1} || Image Ids used for training {_} || targets Length={[len(target) for target in targets]}" )
@@ -83,10 +83,10 @@ def do_train(
             new_lr = optimizer.param_groups[0]["lr"]
             if cur_lr > 1e-7 and cur_lr != new_lr:
                 update_momentum(optimizer, cur_lr, new_lr, logger)
-        
+
         iteration = iteration + 1
         arguments["iteration"] = iteration
-    
+
         images = images.to(device)
         targets = [target.to(device) for target in targets]
         rois = [r.to(device) if r is not None else None for r in rois]
@@ -97,12 +97,12 @@ def do_train(
         loss_dict_reduced = reduce_loss_dict(loss_dict)
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
         meters.update(loss=losses_reduced, **loss_dict_reduced)
-        
+
         # accuracy
         metrics_reduced = reduce_loss_dict(metrics)
         meters.update(**metrics_reduced)
 
-        
+
         # Note: If mixed precision is not used, this ends up doing nothing
         # Otherwise apply loss scaling for mixed-precision recipe
         with amp.scale_loss(losses, optimizer) as scaled_losses:
@@ -190,7 +190,7 @@ def do_train_cdb(
         if cur_lr > 1e-7 and cur_lr != new_lr:
             update_momentum(optimizer, cur_lr, new_lr, logger)
             update_momentum(optimizer_cdb, cur_lr, new_lr, logger)
-        
+
         images = images.to(device)
         targets = [target.to(device) for target in targets]
         rois = [r.to(device) if r is not None else None for r in rois]
@@ -201,7 +201,7 @@ def do_train_cdb(
         loss_dict_reduced = reduce_loss_dict(loss_dict)
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
         meters.update(loss=losses_reduced, **loss_dict_reduced)
-        
+
         # accuracy
         metrics_reduced = reduce_loss_dict(metrics)
         meters.update(**metrics_reduced)
