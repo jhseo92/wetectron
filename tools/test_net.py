@@ -95,6 +95,7 @@ def main():
     output_dir = cfg.OUTPUT_DIR
     checkpointer = DetectronCheckpointer(cfg, model, save_dir=output_dir)
     ckpt = cfg.MODEL.WEIGHT if args.ckpt is None else args.ckpt
+
     _ = checkpointer.load(ckpt, use_latest=args.ckpt is None)
 
     iou_types = ("bbox",)
@@ -121,7 +122,7 @@ def main():
             expected_results=cfg.TEST.EXPECTED_RESULTS,
             expected_results_sigma_tol=cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
             output_folder=output_folder,
-            vis=args.vis, 
+            vis=args.vis,
             task=args.task,
         )
         synchronize()

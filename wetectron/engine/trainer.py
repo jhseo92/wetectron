@@ -69,7 +69,7 @@ def do_train(
     model.train()
     start_training_time = time.time()
     end = time.time()
-    #import IPython; IPython.embed()
+
     for iteration, (images, targets, rois, _) in enumerate(data_loader, start_iter):
         if any(len(target) < 1 for target in targets):
             logger.error(f"Iteration={iteration + 1} || Image Ids used for training {_} || targets Length={[len(target) for target in targets]}" )

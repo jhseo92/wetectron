@@ -93,9 +93,9 @@ class oicr_layer(object):
         # not using the background class
         _prob = source_score[:, 1:].clone()
         _labels = labels[1:]
-        #import IPython; IPython.embed()
-        positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device='cuda')
         #positive_classes = _labels.eq(1).nonzero(as_tuple=False)[:, 0]
+        positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
+        #import IPython; IPython.embed()
         for c in positive_classes:
             cls_prob = _prob[:, c]
             max_index = torch.argmax(cls_prob)

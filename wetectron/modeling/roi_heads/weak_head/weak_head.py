@@ -44,12 +44,13 @@ class ROIWeakHead(torch.nn.Module):
                 are returned. During testing, the predicted boxlists are returned
             losses (dict[Tensor]): During training, returns the losses for the
                 head. During testing, returns an empty dict.
-        """        
+        """
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
         x = self.feature_extractor(features, proposals)
         # final classifier that converts the features into predictions
         cls_score, det_score, ref_scores = self.predictor(x, proposals)
+        #import IPython; IPython.embed()
         if not self.training:
             if ref_scores == None:
                 final_score = cls_score * det_score
@@ -59,7 +60,7 @@ class ROIWeakHead(torch.nn.Module):
             return x, result, {}, {}
 
         loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores, proposals, targets)
-        
+
         return (
             x,
             proposals,
@@ -75,10 +76,10 @@ class ROIWeakRegHead(torch.nn.Module):
         self.feature_extractor = make_roi_box_feature_extractor(cfg, in_channels)
         self.predictor = make_roi_weak_predictor(cfg, self.feature_extractor.out_channels)
         self.loss_evaluator = make_roi_weak_loss_evaluator(cfg)
-        
+
         self.weak_post_processor = weak_roi_box_post_processor(cfg)
         self.strong_post_processor = strong_roi_box_post_processor(cfg)
-        
+
         self.HEUR = cfg.MODEL.ROI_WEAK_HEAD.REGRESS_HEUR
         self.roi_sampler = make_roi_sampler(cfg) if cfg.MODEL.ROI_WEAK_HEAD.PARTIAL_LABELS != "none" else None
         self.DB_METHOD = cfg.DB.METHOD
@@ -92,7 +93,7 @@ class ROIWeakRegHead(torch.nn.Module):
             return self.feature_extractor.forward_neck(x)
         else:
             raise ValueError
-        
+
     def forward(self, features, proposals, targets=None, model_cdb=None):
         # for partial labels
         if self.roi_sampler is not None and self.training:

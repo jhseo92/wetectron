@@ -34,7 +34,7 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, prop
     if len(proposal_files) == 0:
         proposal_files = (None, ) * len(dataset_list)
     assert len(dataset_list) == len(proposal_files)
-        
+
     datasets = []
     for index, dataset_name in enumerate(dataset_list):
         is_labeled = "unlabeled" not in dataset_name
@@ -47,14 +47,14 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, prop
         if data["factory"] == "PascalVOCDataset":
             args["use_difficult"] = not is_train
         args["transforms"] = transforms
-        
+
         # load proposal
         _f = proposal_files[index]
         if _f is not None and _f.startswith("http"):
             # if the file is a url path, download it and cache it
-            _f = cache_url(_f)            
+            _f = cache_url(_f)
         args["proposal_file"] = _f
-        
+
         # make dataset from factory
         dataset = factory(**args)
         datasets.append(dataset)
@@ -167,7 +167,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     DatasetCatalog = paths_catalog.DatasetCatalog
     dataset_list = cfg.DATASETS.TRAIN if is_train else cfg.DATASETS.TEST
     proposal_files = cfg.PROPOSAL_FILES.TRAIN if is_train else cfg.PROPOSAL_FILES.TEST
-    
+
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
     transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
     datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train, proposal_files)
