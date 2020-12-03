@@ -47,8 +47,9 @@ class GeneralizedRCNN(nn.Module):
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
 
         """
+        #import IPython; IPython.embed()
         if self.training and targets is None:
-            raise ValueError("In training mode, targets should be passed")       
+            raise ValueError("In training mode, targets should be passed")
         features = self.backbone(images.tensors)
         if rois is not None and rois[0] is not None:
             # use pre-computed proposals
@@ -70,7 +71,7 @@ class GeneralizedRCNN(nn.Module):
             losses.update(detector_losses)
             losses.update(proposal_losses)
             return losses, accuracy
-        
+
         return result
 
     def backbone_forward(self, images):
@@ -80,7 +81,7 @@ class GeneralizedRCNN(nn.Module):
 
         Returns:
             features (list[Tensor]): the output from the backbone.
-        """    
+        """
         return self.backbone(images.tensors)
 
     def neck_head_forward(self, features, targets=None, rois=None, model_cdb=None):
@@ -93,7 +94,7 @@ class GeneralizedRCNN(nn.Module):
             the same as `forward`
         """
         if self.training and targets is None:
-            raise ValueError("In training mode, targets should be passed")       
+            raise ValueError("In training mode, targets should be passed")
 
         # use pre-computed proposals
         assert rois is not None

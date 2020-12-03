@@ -79,7 +79,7 @@ def train(cfg, local_rank, distributed, use_tensorboard=False):
             delimiter="  ")
     else:
         meters = MetricLogger(delimiter="  ")
-    #import IPython; IPython.embed()
+
     do_train(
         model,
         data_loader,
