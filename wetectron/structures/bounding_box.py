@@ -175,6 +175,7 @@ class BoxList(object):
         coordinate.
         """
         xmin, ymin, xmax, ymax = self._split_into_xyxy()
+        #import IPython; IPython.embed()
         w, h = box[2] - box[0], box[3] - box[1]
         cropped_xmin = (xmin - box[0]).clamp(min=0, max=w)
         cropped_ymin = (ymin - box[1]).clamp(min=0, max=h)

@@ -459,7 +459,7 @@ _C.SOLVER.IMS_PER_BATCH = 16
 # ITER_SIZE allows for the faking of batches
 # Effective batch size = ITER_SIZE * IMS_PER_BATCH
 _C.SOLVER.ITER_SIZE = -1
-
+_C.SOLVER.CLASS_BATCH = False
 # ---------------------------------------------------------------------------- #
 # Solver CDB
 # ---------------------------------------------------------------------------- #
@@ -480,7 +480,7 @@ _C.SOLVER_CDB.WARMUP_METHOD = "linear"
 
 # Concrete Dropblock
 _C.DB = CN()
-_C.DB.METHOD = "none" # "none" | "concrete" 
+_C.DB.METHOD = "none" # "none" | "concrete"
 _C.DB.TAU = 0.3
 _C.DB.SIZE = 3
 _C.DB.WEIGHT = 0.01

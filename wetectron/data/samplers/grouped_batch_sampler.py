@@ -1,10 +1,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import itertools
-
+import os
 import torch
 from torch.utils.data.sampler import BatchSampler
 from torch.utils.data.sampler import Sampler
-
+from wetectron.data.datasets import PascalVOCDataset
 
 class GroupedBatchSampler(BatchSampler):
     """
@@ -32,9 +32,14 @@ class GroupedBatchSampler(BatchSampler):
         assert self.group_ids.dim() == 1
         self.batch_size = batch_size
         self.drop_uneven = drop_uneven
-
+        ### same class per batch try
+        #self.voc_train = PascalVOCDataset(**args_t)
+        #self.voc_val = PascalVOCDataset(**args_v)
+        #import IPython; IPython.embed()
+        ###
+        #self.dataset = dataset
         self.groups = torch.unique(self.group_ids).sort(0)[0]
-
+        #import IPython; IPython.embed()
         self._can_reuse_batches = False
 
     def _prepare_batches(self):
@@ -97,6 +102,7 @@ class GroupedBatchSampler(BatchSampler):
                 if len(batch) == self.batch_size:
                     kept.append(batch)
             batches = kept
+        #import IPython; IPython.embed()
         return batches
 
     def __iter__(self):

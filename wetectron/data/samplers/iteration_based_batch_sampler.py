@@ -15,6 +15,7 @@ class IterationBasedBatchSampler(BatchSampler):
 
     def __iter__(self):
         iteration = self.start_iter
+
         while iteration <= self.num_iterations:
             # if the underlying sampler has a set_epoch method, like
             # DistributedSampler, used for making each process see

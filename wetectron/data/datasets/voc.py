@@ -48,13 +48,14 @@ class PascalVOCDataset(torch.utils.data.Dataset):
 
         with open(self._imgsetpath % self.image_set) as f:
             self.ids = f.readlines()
+
         self.ids = [x.strip("\n") for x in self.ids]
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
 
         cls = PascalVOCDataset.CLASSES
         self.class_to_ind = dict(zip(cls, range(len(cls))))
         self.categories = dict(zip(range(len(cls)), cls))
-        
+
         # Include proposals from a file
         if proposal_file is not None:
             print('Loading proposals from: {}'.format(proposal_file))
@@ -79,7 +80,7 @@ class PascalVOCDataset(torch.utils.data.Dataset):
         else:
             target = self.get_groundtruth(index)
             target = target.clip_to_image(remove_empty=True)
-                
+
         if self.proposals is not None:
             if '_' in self.ids[index] and self.image_set == "test" and "2012" in self.root :
                 img_id = int(self.ids[index].split('_')[1])
@@ -174,6 +175,6 @@ class PascalVOCDataset(torch.utils.data.Dataset):
             name = os.path.join(self.root, file_name)
             img = Image.open(name).convert("RGB")
             return  {"height": img.size[1], "width": img.size[0], "file_name": file_name}
-        
+
     def map_class_id_to_class_name(self, class_id):
         return PascalVOCDataset.CLASSES[class_id]

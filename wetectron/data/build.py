@@ -36,11 +36,13 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, prop
     assert len(dataset_list) == len(proposal_files)
 
     datasets = []
+    data_args = []
     for index, dataset_name in enumerate(dataset_list):
         is_labeled = "unlabeled" not in dataset_name
         data = dataset_catalog.get(dataset_name)
         factory = getattr(D, data["factory"])
         args = data["args"]
+
         # for COCODataset, we want to remove images without annotations during training
         if data["factory"] == "COCODataset":
             args["remove_images_without_annotations"] = (is_train and is_labeled)
@@ -58,24 +60,24 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, prop
         # make dataset from factory
         dataset = factory(**args)
         datasets.append(dataset)
-
+        data_args.append(args)
     # for testing, return a list of datasets
     if not is_train:
-        return datasets
+        return datasets, data_args
 
     # for training, concatenate all datasets into a single one
     dataset = datasets[0]
     if len(datasets) > 1:
         dataset = D.ConcatDataset(datasets)
 
-    return [dataset]
+    return [dataset], [data_args]
 
 
 def make_data_sampler(dataset, shuffle, distributed):
     if distributed:
         return samplers.DistributedSampler(dataset, shuffle=shuffle)
     if shuffle:
-        sampler = torch.utils.data.sampler.RandomSampler(dataset)
+        sampler = torch.utils.data.sampler.RandomSampler(dataset)   #randomsampler
     else:
         sampler = torch.utils.data.sampler.SequentialSampler(dataset)
     return sampler
@@ -98,9 +100,10 @@ def _compute_aspect_ratios(dataset):
 
 
 def make_batch_data_sampler(
-    dataset, sampler, aspect_grouping, images_per_batch, num_iters=None, start_iter=0
+    dataset, sampler, aspect_grouping, images_per_batch, args, is_train, class_batch,
+    num_iters=None, start_iter=0
 ):
-    if aspect_grouping:
+    if aspect_grouping and not class_batch:
         if not isinstance(aspect_grouping, (list, tuple)):
             aspect_grouping = [aspect_grouping]
         aspect_ratios = _compute_aspect_ratios(dataset)
@@ -112,10 +115,19 @@ def make_batch_data_sampler(
         batch_sampler = torch.utils.data.sampler.BatchSampler(
             sampler, images_per_batch, drop_last=False
         )
+
+    if class_batch and is_train:
+        aspect_ratios = _compute_aspect_ratios(dataset)
+        group_ids = _quantize(aspect_ratios, aspect_grouping)
+        batch_sampler = samplers.ClassBatchSampler(
+            sampler, group_ids, images_per_batch, dataset, args[0][0], args[0][1], drop_uneven=False
+        )
+
     if num_iters is not None:
         batch_sampler = samplers.IterationBasedBatchSampler(
             batch_sampler, num_iters, start_iter
         )
+
     return batch_sampler
 
 def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
@@ -170,17 +182,20 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
 
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
     transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
-    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train, proposal_files)
+    datasets, data_args = build_dataset(dataset_list, transforms, DatasetCatalog, is_train, proposal_files)
     if is_train:
         # save category_id to label name mapping
         save_labels(datasets, cfg.OUTPUT_DIR)
 
     data_loaders = []
     for dataset in datasets:
-        sampler = make_data_sampler(dataset, shuffle, is_distributed)
+        #shuffle = False if cfg.SOLVER.CLASS_BATCH else True
+        sampler = make_data_sampler(dataset, shuffle, is_distributed)  ##Randomsampler
         batch_sampler = make_batch_data_sampler(
-            dataset, sampler, aspect_grouping, images_per_gpu, num_iters, start_iter
+            dataset, sampler, aspect_grouping, images_per_gpu, data_args, is_train,
+            cfg.SOLVER.CLASS_BATCH, num_iters, start_iter
         )
+
         collator = BBoxAugCollator() if not is_train and cfg.TEST.BBOX_AUG.ENABLED else \
             BatchCollator(cfg.DATALOADER.SIZE_DIVISIBILITY)
         num_workers = cfg.DATALOADER.NUM_WORKERS

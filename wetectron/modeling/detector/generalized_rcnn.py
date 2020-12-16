@@ -50,7 +50,7 @@ class GeneralizedRCNN(nn.Module):
         #import IPython; IPython.embed()
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
-        features = self.backbone(images.tensors)
+        features = self.backbone(images.tensors)    #vgg16 images.tensors: [2,3,600,800]
         if rois is not None and rois[0] is not None:
             # use pre-computed proposals
             proposals = rois
@@ -59,6 +59,7 @@ class GeneralizedRCNN(nn.Module):
             proposals, proposal_losses = self.rpn(images, features, targets)
 
         if self.roi_heads:
+            #import IPython; IPython.embed()
             x, result, detector_losses, accuracy = self.roi_heads(features, proposals, targets, model_cdb)
         else:
             # RPN-only models don't have roi_heads

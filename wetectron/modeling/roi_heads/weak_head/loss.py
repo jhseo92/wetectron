@@ -66,7 +66,7 @@ class WSDDNLossComputation(object):
         """
         class_score = cat(class_score, dim=0)
         class_score = F.softmax(class_score, dim=1)
-        
+
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
         final_det_score = []
@@ -74,7 +74,7 @@ class WSDDNLossComputation(object):
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
-        
+
         device = class_score.device
         num_classes = class_score.shape[1]
 
@@ -90,7 +90,8 @@ class WSDDNLossComputation(object):
             accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
 
         total_loss = total_loss / len(final_score_list)
-        accuracy_img = accuracy_img / len(final_score_list)        
+        accuracy_img = accuracy_img / len(final_score_list)
+
         return dict(loss_img=total_loss), dict(accuracy_img=accuracy_img)
 
 
@@ -121,7 +122,7 @@ class RoILossComputation(object):
         """
         class_score = cat(class_score, dim=0)
         class_score = F.softmax(class_score, dim=1)
-        
+
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
         final_det_score = []
@@ -129,14 +130,14 @@ class RoILossComputation(object):
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
-        
+
         device = class_score.device
         num_classes = class_score.shape[1]
-        
+
         final_score = class_score * final_det_score
         final_score_list = final_score.split([len(p) for p in proposals])
         ref_scores = [rs.split([len(p) for p in proposals]) for rs in ref_scores]
-        
+
         return_loss_dict = dict(loss_img=0)
         return_acc_dict = dict(acc_img=0)
         num_refs = len(ref_scores)
@@ -156,25 +157,25 @@ class RoILossComputation(object):
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
-                
+
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
                 for i in range(num_refs):
                     ref_score_per_im = torch.sum(ref_scores[i][idx], dim=0)
                     return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes)
-                
+
         assert len(final_score_list) != 0
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
             return_loss_dict[l] /= len(final_score_list)
             return_acc_dict[a] /= len(final_score_list)
-        
+
         return return_loss_dict, return_acc_dict
 
 
 @registry.ROI_WEAK_LOSS.register("RoIRegLoss")
 class RoIRegLossComputation(object):
     """ Generic roi-level loss """
-    def __init__(self, cfg):        
+    def __init__(self, cfg):
         refine_p = cfg.MODEL.ROI_WEAK_HEAD.OICR_P
         if refine_p == 0:
             self.roi_layer = oicr_layer()
@@ -186,12 +187,12 @@ class RoIRegLossComputation(object):
         self.cls_agnostic_bbox_reg = cfg.MODEL.CLS_AGNOSTIC_BBOX_REG
         # for partial labels
         self.roi_refine = cfg.MODEL.ROI_WEAK_HEAD.ROI_LOSS_REFINE
-        self.partial_label = cfg.MODEL.ROI_WEAK_HEAD.PARTIAL_LABELS 
+        self.partial_label = cfg.MODEL.ROI_WEAK_HEAD.PARTIAL_LABELS
         assert self.partial_label in ['none', 'point', 'scribble']
         self.proposal_scribble_matcher = Matcher(
             0.5, 0.5, allow_low_quality_matches=False,
         )
-        
+
     def filter_pseudo_labels(self, pseudo_labels, proposal, target):
         """ refine pseudo labels according to partial labels """
         if 'scribble' in target.fields() and self.partial_label=='scribble':
@@ -214,13 +215,13 @@ class RoIRegLossComputation(object):
             pseudo_labels_repeat = torch.cat([pseudo_labels.unsqueeze(0) for _ in range(matched_ids.shape[0])])
             correct_idx = (matched_cls == pseudo_labels_repeat.float()).sum(0)
             pseudo_labels[correct_idx==0] = 0
-            
+
         return pseudo_labels
 
     def __call__(self, class_score, det_score, ref_scores, ref_bbox_preds, proposals, targets, epsilon=1e-10):
         class_score = cat(class_score, dim=0)
         class_score = F.softmax(class_score, dim=1)
-        
+
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
         final_det_score = []
@@ -228,15 +229,15 @@ class RoIRegLossComputation(object):
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
-        
+
         device = class_score.device
         num_classes = class_score.shape[1]
-        
+
         final_score = class_score * final_det_score
         final_score_list = final_score.split([len(p) for p in proposals])
         ref_scores = [rs.split([len(p) for p in proposals]) for rs in ref_scores]
         ref_bbox_preds = [rbp.split([len(p) for p in proposals]) for rbp in ref_bbox_preds]
-        
+
         return_loss_dict = dict(loss_img=0)
         return_acc_dict = dict(acc_img=0)
         num_refs = len(ref_scores)
@@ -246,6 +247,7 @@ class RoIRegLossComputation(object):
             return_acc_dict['acc_ref%d'%i] = 0
 
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
+
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
             # MIL loss
@@ -266,7 +268,7 @@ class RoIRegLossComputation(object):
                 return_loss_dict['loss_ref_cls%d'%i] += lmda * torch.mean(
                     F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights
                 )
-                # regression             
+                # regression
                 sampled_pos_inds_subset = torch.nonzero(pseudo_labels>0, as_tuple=False).squeeze(1)
                 labels_pos = pseudo_labels[sampled_pos_inds_subset]
                 if self.cls_agnostic_bbox_reg:
@@ -281,19 +283,19 @@ class RoIRegLossComputation(object):
                     beta=1, reduction=False) * loss_weights[sampled_pos_inds_subset, None]
                 )
                 reg_loss /= pseudo_labels.numel()
-                return_loss_dict['loss_ref_reg%d'%i] += reg_loss 
-                
+                return_loss_dict['loss_ref_reg%d'%i] += reg_loss
+
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
                 for i in range(num_refs):
                     ref_score_per_im = torch.sum(ref_scores[i][idx], dim=0)
                     return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes)
-                
+
         assert len(final_score_list) != 0
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
             return_loss_dict[l] /= len(final_score_list)
             return_acc_dict[a] /= len(final_score_list)
-        
+
         return return_loss_dict, return_acc_dict
 
 
