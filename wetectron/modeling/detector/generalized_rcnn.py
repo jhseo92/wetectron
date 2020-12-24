@@ -15,7 +15,7 @@ from wetectron.structures.image_list import to_image_list
 from ..backbone import build_backbone
 from ..rpn.rpn import build_rpn
 from ..roi_heads.roi_heads import build_roi_heads
-
+#from ..roi_heads.triplet_head import tripletnet
 
 class GeneralizedRCNN(nn.Module):
     """
@@ -33,7 +33,7 @@ class GeneralizedRCNN(nn.Module):
         if cfg.MODEL.FASTER_RCNN:
             self.rpn = build_rpn(cfg, self.backbone.out_channels)
         self.roi_heads = build_roi_heads(cfg, self.backbone.out_channels)
-
+        #self.embeddingnet = tripletnet.TripletNet()
     def forward(self, images, targets=None, rois=None, model_cdb=None):
         """
         Arguments:
@@ -51,6 +51,7 @@ class GeneralizedRCNN(nn.Module):
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
         features = self.backbone(images.tensors)    #vgg16 images.tensors: [2,3,600,800]
+
         if rois is not None and rois[0] is not None:
             # use pre-computed proposals
             proposals = rois

@@ -48,7 +48,7 @@ class ROIWeakHead(torch.nn.Module):
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
         #import IPython; IPython.embed()
-        x = self.feature_extractor(features, proposals)
+        x, roi_feature_map = self.feature_extractor(features, proposals)    #vgg16 roi_layer
         #import IPython; IPython.embed()
         # final classifier that converts the features into predictions
         cls_score, det_score, ref_scores = self.predictor(x, proposals)
@@ -62,7 +62,8 @@ class ROIWeakHead(torch.nn.Module):
             result = self.post_processor(final_score, proposals)
             return x, result, {}, {}
 
-        loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores, proposals, targets)
+        loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores,
+                                                     proposals, targets, roi_feature_map)
 
         return (
             x,

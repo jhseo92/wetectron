@@ -5,7 +5,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 from collections import OrderedDict
-
+import torch
 import torch.nn as nn
 from wetectron.modeling import registry
 from wetectron.modeling.poolers import Pooler
@@ -23,13 +23,11 @@ class VGG_Base(nn.Module):
     def __init__(self, features, cfg, init_weights=True):
         super(VGG_Base, self).__init__()
         self.features = features
-        import IPython; IPython.embed()
         if init_weights:
             self._initialize_weights()
         self._freeze_backbone(cfg.MODEL.BACKBONE.FREEZE_CONV_BODY_AT)
 
     def forward(self, x):
-        import IPython; IPython.embed()
         x = self.features(x)
         return [x]
 
@@ -125,6 +123,18 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         )
         self.out_channels = 4096
 
+        self.triplet = nn.Sequential(
+            nn.Linear(512 * 7 * 7, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 2048),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(2048, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout()
+        )
+
         if init_weights:
             self._initialize_weights()
 
@@ -136,11 +146,17 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
 
     def forward(self, x, proposals):
         # also pool featurs of multiple images into one huge ROI tensor
-        x = self.pooler(x, proposals)
-        x = x.view(x.shape[0], -1)
-        x = self.classifier(x)
-        import IPython; IPython.embed()
-        return x
+        #import IPython; IPython.embed()
+        roi_feature_map = self.pooler(x, proposals)
+        #import IPython; IPython.embed()
+        roi_flat = roi_feature_map.view(roi_feature_map.shape[0], -1)
+        #import IPython; IPython.embed()
+        roi_fc = self.classifier(roi_flat)
+        #import IPython; IPython.embed()
+        #torch.cuda.empty_cache()
+        roi_triplet = self.triplet(roi_flat)
+        #import IPython; IPython.embed()
+        return roi_fc, roi_triplet
 
     def forward_pooler(self, x, proposals):
         x = self.pooler(x, proposals)

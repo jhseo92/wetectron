@@ -3,6 +3,7 @@
 # Nvidia Source Code License-NC
 # --------------------------------------------------------
 import torch
+import collections
 from torch.nn import functional as F
 
 from wetectron.layers import smooth_l1_loss
@@ -108,7 +109,7 @@ class RoILossComputation(object):
         else:
             raise ValueError('please use propoer ratio P.')
 
-    def __call__(self, class_score, det_score, ref_scores, proposals, targets, epsilon=1e-10):
+    def __call__(self, class_score, det_score, ref_scores, proposals, targets, triplet_feature, epsilon=1e-10):
         """
         Arguments:
             class_score (list[Tensor])
@@ -140,35 +141,56 @@ class RoILossComputation(object):
 
         return_loss_dict = dict(loss_img=0)
         return_acc_dict = dict(acc_img=0)
+        max_ind_dict = [0] * len(ref_scores)
         num_refs = len(ref_scores)
+        batch_index = [0] * len(final_score_list)
+        #import IPython; IPython.embed()
         for i in range(num_refs):
             return_loss_dict['loss_ref%d'%i] = 0
             return_acc_dict['acc_ref%d'%i] = 0
+            #max_ind_dict['max_index%d'%i] = 0
 
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
+
             # MIL loss
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1)).item()
             # Region loss
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
+                pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
+                max_ind_dict[i] = max_index
+
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
+            batch_index[idx] = max_ind_dict.copy()
 
             with torch.no_grad():
-                return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
+                return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes).item()
                 for i in range(num_refs):
                     ref_score_per_im = torch.sum(ref_scores[i][idx], dim=0)
-                    return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes)
+                    return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes).item()
 
+        triplets = [dict()]
+        ### triplet selection
+        duplicate_check = []
+        for b in batch_index:
+            duplicate_check += list(b[0].keys())
+        duplicate = [item for item, count in collections.Counter(duplicate_check).items() if count > 1]
+        triplet_batch = [list(x) for x in zip(*batch_index)]
+
+        #for batch in batch_index:
+        #    for ref in batch:
+        #        triplets['a'] = ref.get(duplicate[0])
+        ###
         assert len(final_score_list) != 0
+
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
             return_loss_dict[l] /= len(final_score_list)
             return_acc_dict[a] /= len(final_score_list)
-
+        import IPython; IPython.embed()
         return return_loss_dict, return_acc_dict
 
 
@@ -252,7 +274,7 @@ class RoIRegLossComputation(object):
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
             # MIL loss
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1)).item()
 
             # Region loss
             for i in range(num_refs):
