@@ -23,13 +23,13 @@ class VGG_Base(nn.Module):
     def __init__(self, features, cfg, init_weights=True):
         super(VGG_Base, self).__init__()
         self.features = features
-        import IPython; IPython.embed()
+        #import IPython; IPython.embed()
         if init_weights:
             self._initialize_weights()
         self._freeze_backbone(cfg.MODEL.BACKBONE.FREEZE_CONV_BODY_AT)
 
     def forward(self, x):
-        import IPython; IPython.embed()
+        #import IPython; IPython.embed()
         x = self.features(x)
         return [x]
 
@@ -139,7 +139,7 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         x = self.pooler(x, proposals)
         x = x.view(x.shape[0], -1)
         x = self.classifier(x)
-        import IPython; IPython.embed()
+        #import IPython; IPython.embed()
         return x
 
     def forward_pooler(self, x, proposals):
