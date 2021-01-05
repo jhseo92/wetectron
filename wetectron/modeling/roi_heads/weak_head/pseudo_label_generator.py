@@ -63,7 +63,7 @@ class mist_layer(object):
                 # Select background RoIs as those with <= FG_IOU_THRESHOLD
                 bg_inds = max_overlaps.lt(cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD).nonzero(as_tuple=False)[:,0]
                 pseudo_labels[bg_inds] = 0
-
+                import IPython; IPython.embed()
                 # compute regression targets
                 if return_targets:
                     matched_targets = gt_boxes[gt_assignment]
@@ -139,7 +139,7 @@ class oicr_layer(object):
 class distance_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
     @torch.no_grad()
-    def __call__(self, proposals, source_score, labels, device, close_obj,triplet_batch, return_targets=False):
+    def __call__(self, proposals, source_score, labels, device, close_obj, duplicate, return_targets=False):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
@@ -161,7 +161,16 @@ class distance_layer(object):
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)
             _prob[max_index].fill_(0)
-
+            ### add closed object index to gt_boxes, classes, scores ###
+            #import IPython; IPython.embed()
+            if duplicate[0] == c.add(1).item():
+                for close_ind in close_obj:
+                    if close_ind.item() != max_index:
+                        gt_boxes = torch.cat((gt_boxes, proposals.bbox[close_ind.item()].view(1, -1)), dim=0)
+                        gt_classes = torch.cat((gt_classes, c.add(1).view(1,1)), dim=0)
+                        gt_scores = torch.cat((gt_scores, cls_prob[close_ind.item()].view(1, 1)), dim=0)
+                        import IPython; IPython.embed()
+        #import IPython; IPython.embed()
         if return_targets == True:
             gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
             gt_boxes.add_field('labels',  gt_classes[:, 0].float())
@@ -175,14 +184,16 @@ class distance_layer(object):
         else:
             gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
             overlaps = boxlist_iou(proposals, gt_boxes)
+
             max_overlaps, gt_assignment = overlaps.max(dim=1)
+
             pseudo_labels = gt_classes[gt_assignment, 0]
             loss_weights = gt_scores[gt_assignment, 0]
-            import IPython; IPython.embed()
+            #import IPython; IPython.embed()
             # Select background RoIs as those with <= FG_IOU_THRESHOLD
             bg_inds = max_overlaps.le(cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD).nonzero(as_tuple=False)[:,0]
             pseudo_labels[bg_inds] = 0
-
+            #import IPython; IPython.embed()
             # PCL_TRICK:
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
