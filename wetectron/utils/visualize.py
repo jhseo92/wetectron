@@ -27,7 +27,7 @@ COCO_CATEGORIES = ["__background",
     "hot dog","pizza","donut","cake","chair","couch","potted plant","bed","dining table","toilet","tv","laptop","mouse","remote","keyboard",
     "cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear","hair drier", "toothbrush"]
 
-VOC_CATEGORIES = ["__background", 
+VOC_CATEGORIES = ["__background",
     "aeroplane","bicycle","bird","boat","bottle","bus","car","cat","chair", "cow","diningtable","dog",
     "horse","motorbike","person","pottedplant","sheep","sofa","train","tvmonitor"]
 
@@ -144,12 +144,12 @@ def overlay_class_names(image, predictions, CATEGORIES):
         x, y = box[:2]
         s = template.format(label, score)
         cv2.putText(
-            image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1
+            image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 3
         )
     return image
 
 def vis_results(
-        predictions, 
+        predictions,
         img_infos,
         data_path,
         show_mask_heatmaps=False,
@@ -159,7 +159,7 @@ def vis_results(
     confidence_threshold = cfg.TEST.VIS_THRES
     mask_threshold = -1 if show_mask_heatmaps else 0.5
     masker = Masker(threshold=mask_threshold, padding=1)
-    
+
     for prediction, img_info in zip(predictions, img_infos):
         img_name = img_info['file_name']
         image = cv2.imread(os.path.join(data_path, img_name))
@@ -173,7 +173,7 @@ def vis_results(
             masks = prediction.get_field("mask")
             masks = masker([masks], [prediction])[0]
             prediction.add_field("mask", masks)
-            
+
         # select only prediction which have a `score` > confidence_threshold
         scores = prediction.get_field("scores")
         keep = torch.nonzero(scores > confidence_threshold, as_tuple=False).squeeze(1)
@@ -182,12 +182,12 @@ def vis_results(
         scores = prediction.get_field("scores")
         _, idx = scores.sort(0, descending=True)
         prediction = prediction[idx]
-        
+
         result = image.copy()
         if show_mask_heatmaps:
             result = create_mask_montage(result, prediction, masks_per_dim)
         else:
-            result = overlay_boxes(result, prediction)    
+            result = overlay_boxes(result, prediction)
             if cfg.MODEL.MASK_ON:
                 result = overlay_mask(result, prediction)
             if cfg.MODEL.KEYPOINT_ON:
@@ -200,13 +200,13 @@ def vis_results(
             else:
                 raise ValueError
             result = overlay_class_names(result, prediction, CATEGORIES)
-            
+
         # save
         out_path = os.path.join(cfg['OUTPUT_DIR'], 'vis')
         if not os.path.exists(out_path):
             os.makedirs(out_path)
         cv2.imwrite(os.path.join(out_path, img_name.replace('/', '-')), result)
-        
+
 def vis_keypoints(img, kps, kp_thresh=2, alpha=0.7):
     """Visualizes keypoints (adapted from vis_one_image).
     kps has shape (4, #keypoints) where 4 rows are (x, y, logit, prob).

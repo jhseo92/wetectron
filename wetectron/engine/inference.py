@@ -78,7 +78,7 @@ def inference(
         expected_results=(),
         expected_results_sigma_tol=4,
         output_folder=None,
-        vis=False,
+        vis=True,
         task='det',
 ):
     # convert to a torch.device for efficiency
