@@ -114,7 +114,7 @@ class RoILossComputation(object):
         else:
             raise ValueError('please use propoer ratio P.')
 
-    def __call__(self, class_score, det_score, ref_scores, proposals, targets, triplet_feature, epsilon=1e-10):
+    def __call__(self, class_score, det_score, ref_scores, proposals, targets, triplet_feature, iteration, epsilon=1e-10):
         """
         Arguments:
             class_score (list[Tensor])
@@ -219,7 +219,7 @@ class RoILossComputation(object):
             #mean_dist = (self.cos_dist(triplet_feature, a_feat) + self.cos_dist(triplet_feature, p_feat))/2
             mean_dist = (b1_dist + b2_dist)/2
 
-            close_ind = (mean_dist > 0.5).nonzero()
+            close_ind = (mean_dist > 0.7).nonzero()
             b1_close = close_ind[:(close_ind < box_per_batch).nonzero().shape[0]]
             b2_close = close_ind[(close_ind < box_per_batch).nonzero().shape[0]:] - proposals[0].bbox.shape[0]
 
@@ -227,9 +227,6 @@ class RoILossComputation(object):
             close_batch.append([e.item() for e in b2_close])
             close_obj.append(close_batch)
             return_loss_dict['loss_triplet%d'%r] = mean_dist.max().item() * triplet_loss[r]
-            #import IPython; IPython.embed()
-            #close_ind = torch.where(close_ind > (proposals[0].bbox.shape[0]),
-            #                        close_ind - proposals[0].bbox.shape[0], close_ind)
 
             #import IPython; IPython.embed()
             #for i, ind in enumerate(close_ind):
@@ -252,7 +249,8 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
         ### triplet end ###
-
+        if (iteration % 1000) == 0:
+            import IPython; IPython.embed()
         assert len(final_score_list) != 0
         #import IPython; IPython.embed()
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):

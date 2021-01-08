@@ -34,7 +34,7 @@ class GeneralizedRCNN(nn.Module):
             self.rpn = build_rpn(cfg, self.backbone.out_channels)
         self.roi_heads = build_roi_heads(cfg, self.backbone.out_channels)
         #self.embeddingnet = tripletnet.TripletNet()
-    def forward(self, images, targets=None, rois=None, model_cdb=None):
+    def forward(self, images, iteration, targets=None, rois=None, model_cdb=None):
         """
         Arguments:
             images (list[Tensor] or ImageList): images to be processed
@@ -61,7 +61,7 @@ class GeneralizedRCNN(nn.Module):
 
         if self.roi_heads:
             #import IPython; IPython.embed()
-            x, result, detector_losses, accuracy = self.roi_heads(features, proposals, targets, model_cdb)
+            x, result, detector_losses, accuracy = self.roi_heads(features, proposals, iteration, targets, model_cdb)
         else:
             # RPN-only models don't have roi_heads
             x = features

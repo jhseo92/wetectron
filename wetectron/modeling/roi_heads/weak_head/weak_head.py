@@ -31,7 +31,7 @@ class ROIWeakHead(torch.nn.Module):
         self.post_processor = weak_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_weak_loss_evaluator(cfg)
 
-    def forward(self, features, proposals, targets=None, model_cdb=None):
+    def forward(self, features, proposals, iteration, targets=None, model_cdb=None):
         """
         Arguments:
             features (list[Tensor]): feature-maps from possibly several levels
@@ -63,7 +63,7 @@ class ROIWeakHead(torch.nn.Module):
             return x, result, {}, {}
 
         loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores,
-                                                     proposals, targets, roi_feature_map)
+                                                     proposals, targets, roi_feature_map, iteration)
 
         return (
             x,
