@@ -182,13 +182,15 @@ class RoILossComputation(object):
         triplets = []
         triplet_loss = [0 for j in range(3)] ## refine_time
         close_obj = [] ##refine_time,batch_size
+
         ### triplet selection
         duplicate_check = []
         for b in batch_index:
             duplicate_check += list(b[0].keys())
         duplicate = [item for item, count in collections.Counter(duplicate_check).items() if count > 1]
         triplet_batch = [list(x) for x in zip(*batch_index)]
-        #import IPython; IPython.embed()
+
+
         for r, ref in enumerate(triplet_batch): ## three == refine_time
             close_batch = []
             #a = list(ref[0].values())[0]
@@ -207,7 +209,7 @@ class RoILossComputation(object):
             p_feat = triplet_feature[box_per_batch:][p].unsqueeze(0)
             n_feat = triplet_feature[box_per_batch:][n].unsqueeze(0)
             triplet_loss[r] = self.triplet_loss[r](a_feat, p_feat, n_feat)
-            return_loss_dict['loss_triplet%d'%r] = triplet_loss[r]
+            #return_loss_dict['loss_triplet%d'%r] = triplet_loss[r]
             ## TODO triplet loss by batch?
             try:
                 b1_dist = self.cos_dist(triplet_feature, a_feat)
@@ -216,15 +218,15 @@ class RoILossComputation(object):
                 import IPython; IPython.embed()
             #mean_dist = (self.cos_dist(triplet_feature, a_feat) + self.cos_dist(triplet_feature, p_feat))/2
             mean_dist = (b1_dist + b2_dist)/2
-            #import IPython; IPython.embed()
+
             close_ind = (mean_dist > 0.5).nonzero()
             b1_close = close_ind[:(close_ind < box_per_batch).nonzero().shape[0]]
             b2_close = close_ind[(close_ind < box_per_batch).nonzero().shape[0]:] - proposals[0].bbox.shape[0]
 
-            close_batch.append([e.item() for e in b1_close])# = [e.item() for e in b1_close]
-            close_batch.append([e.item() for e in b2_close])#[r][1] = [e.item() for e in b2_close]
+            close_batch.append([e.item() for e in b1_close])
+            close_batch.append([e.item() for e in b2_close])
             close_obj.append(close_batch)
-
+            return_loss_dict['loss_triplet%d'%r] = mean_dist.max().item() * triplet_loss[r]
             #import IPython; IPython.embed()
             #close_ind = torch.where(close_ind > (proposals[0].bbox.shape[0]),
             #                        close_ind - proposals[0].bbox.shape[0], close_ind)
@@ -252,7 +254,7 @@ class RoILossComputation(object):
         ### triplet end ###
 
         assert len(final_score_list) != 0
-
+        #import IPython; IPython.embed()
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
             return_loss_dict[l] /= len(final_score_list)
             return_acc_dict[a] /= len(final_score_list)
