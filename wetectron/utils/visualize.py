@@ -144,7 +144,7 @@ def overlay_class_names(image, predictions, CATEGORIES):
         x, y = box[:2]
         s = template.format(label, score)
         cv2.putText(
-            image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 3
+            image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 255, 0), 3
         )
     return image
 
