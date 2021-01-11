@@ -85,7 +85,7 @@ class mist_layer(object):
 class oicr_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
     @torch.no_grad()
-    def __call__(self, proposals, source_score, labels, device, return_targets=False):
+    def __call__(self, proposals, source_score, labels, device, duplicate, return_targets=False):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
@@ -102,7 +102,7 @@ class oicr_layer(object):
         for c in positive_classes:
             cls_prob = _prob[:, c]
             max_index = torch.argmax(cls_prob)
-            max_indexes[c.item() + 1] = max_index.item()
+            max_indexes[c.item() + 1] = [max_index.item()]
             gt_boxes = torch.cat((gt_boxes, proposals.bbox[max_index].view(1, -1)), dim=0)
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)
@@ -133,7 +133,7 @@ class oicr_layer(object):
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
             # loss_weights[ignore_inds] = 0
-        #import IPython; IPython.embed()
+            max_indexes[duplicate[0]] = (pseudo_labels == duplicate[0]).nonzero(as_tuple=False).tolist()
         return pseudo_labels, loss_weights, max_indexes
 
 class distance_layer(object):
@@ -146,8 +146,10 @@ class distance_layer(object):
         # not using the background class
         _prob = source_score[:, 1:].clone()
         _labels = labels[1:]
-        #positive_classes = _labels.eq(1).nonzero(as_tuple=False)[:, 0]
-        positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
+
+        #import IPython; IPython.embed()
+        positive_classes = _labels.eq(1).nonzero(as_tuple=False)[:, 0]
+        #positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
 
         for c in positive_classes:
             cls_prob = _prob[:, c]
