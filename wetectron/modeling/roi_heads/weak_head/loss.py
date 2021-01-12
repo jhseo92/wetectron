@@ -235,9 +235,6 @@ class RoILossComputation(object):
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
             pseudo_labels_mining, loss_weights_mining, max_index = self.roi_layer(proposals_per_image, average_score[idx], labels_per_im, device, duplicate)
             avg_max_ind[idx] = max_index
-        #import IPython; IPython.embed()
-
-        #if len(avg_max_ind[0][duplicate[0]]) == 1:
 
         a_feat = b1_triplet_feature[torch.tensor(avg_max_ind[0][duplicate[0]])].squeeze(1)
         p_feat = b2_triplet_feature[torch.tensor(avg_max_ind[1][duplicate[0]])].squeeze(1)
@@ -255,7 +252,6 @@ class RoILossComputation(object):
         b1_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
         b2_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
 
-        #import IPython; IPython.embed()
         for i in range(a_feat.shape[0]):
             b1_dist += self.cos_dist(triplet_feature, a_feat[i].unsqueeze(0))
             b2_dist += self.cos_dist(triplet_feature, p_feat[i].unsqueeze(0))
@@ -263,7 +259,6 @@ class RoILossComputation(object):
         b1_dist = b1_dist / a_feat.shape[0]
         b2_dist = b2_dist / p_feat.shape[0]
         mean_dist = (b1_dist + b2_dist)/2
-        #import IPython; IPython.embed()
         '''try:
             b1_dist = self.cos_dist(triplet_feature, a_feature)
             b2_dist = self.cos_dist(triplet_feature, p_feature)
@@ -272,11 +267,10 @@ class RoILossComputation(object):
         except:
             import IPython; IPython.embed()
         '''
-        #import IPython; IPython.embed()
         #mean_dist = (b1_dist + b2_dist)/2
         close_ind = (mean_dist >  0.5).nonzero(as_tuple=False)
 
-        #import IPython; IPython.embed()
+
         b1_close = close_ind[:(close_ind < box_per_batch).nonzero(as_tuple=False).shape[0]]
         b2_close = close_ind[(close_ind < box_per_batch).nonzero(as_tuple=False).shape[0]:] - proposals[0].bbox.shape[0]
         close_obj.append(b1_close)
