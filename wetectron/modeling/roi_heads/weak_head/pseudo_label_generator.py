@@ -90,6 +90,7 @@ class oicr_layer(object):
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
         max_indexes = dict()
+        max_indexes_iou = dict()
         # not using the background class
         _prob = source_score[:, 1:].clone()
         _labels = labels[1:]
@@ -133,9 +134,9 @@ class oicr_layer(object):
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
             # loss_weights[ignore_inds] = 0
-            max_indexes[duplicate[0]] = (pseudo_labels == duplicate[0]).nonzero(as_tuple=False).tolist()
+            max_indexes_iou[duplicate[0]] = (pseudo_labels == duplicate[0]).nonzero(as_tuple=False).tolist()
 
-        return pseudo_labels, loss_weights, max_indexes
+        return pseudo_labels, loss_weights, max_indexes, max_indexes_iou
 
 class distance_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """

@@ -125,7 +125,7 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         )
         self.out_channels = 4096
 
-        self.triplet = nn.Sequential(
+        '''self.triplet = nn.Sequential(
             nn.Linear(512 * 7 * 7, 4096),
             nn.ReLU(inplace=True),
             nn.Dropout(),
@@ -133,7 +133,9 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
             nn.ReLU(inplace=True),
             nn.Dropout(),
             nn.Linear(4096, 128)
-        )
+        )'''
+        self.triplet = nn.Linear(4096, 128)
+
 
         if init_weights:
             self._initialize_weights()
@@ -150,7 +152,8 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         roi_feature_map = self.pooler(x, proposals)
         roi_flat = roi_feature_map.view(roi_feature_map.shape[0], -1)
         roi_fc = self.classifier(roi_flat)
-        roi_triplet = self.triplet(roi_feature_map)
+        #roi_triplet = self.triplet(roi_flat)
+        roi_triplet = self.triplet(roi_fc)
 
         return roi_fc, roi_triplet
 

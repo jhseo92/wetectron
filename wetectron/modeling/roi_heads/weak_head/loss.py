@@ -151,6 +151,8 @@ class RoILossComputation(object):
         batch_index = [0] * len(final_score_list)
         source_score = [0] * len(ref_scores)
 
+        max_indexes_iou = []
+
         target_cat = torch.cat((targets[0].get_field('labels').unique(), targets[1].get_field('labels').unique())).tolist()
         duplicate = [int(item) for item, count in collections.Counter(target_cat).items() if count > 1]
 
@@ -170,9 +172,10 @@ class RoILossComputation(object):
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
+                pseudo_labels, loss_weights, max_index, max_index_iou = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
                                                         ### pseudo_label_generator
                 max_ind_dict[i] = max_index
+                max_indexes_iou.append(max_index_iou)
 
                 #return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
             batch_index[idx] = max_ind_dict.copy()
@@ -200,51 +203,59 @@ class RoILossComputation(object):
 
             a = torch.tensor(ref[0].get(duplicate[0]))
             p = torch.tensor(ref[1].get(duplicate[0]))
+            n = source_score[r][:,0].argmax()
+
+            #if len(a) <= len(p):
+            #    p = p[:len(a)]
+            #else:
+            #    a = a[:len(p)]
+
             #n = [source_score[r][:,0].topk(len(a))[1].tolist()]
-
-            if len(a) <= len(p):
-                p = p[:len(a)]
-            else:
-                a = a[:len(p)]
-
-            n = [source_score[r][:,0].topk(len(a))[1].tolist()]
-            a_feat = triplet_feature[:box_per_batch][a].squeeze()
-            p_feat = triplet_feature[box_per_batch:][p].squeeze()
-            n_feat = triplet_feature[box_per_batch:][n].squeeze()
-
-            if len(a) ==1 :
-                a_feat = triplet_feature[:box_per_batch][a].squeeze(1)
-                p_feat = triplet_feature[box_per_batch:][p].squeeze(1)
-                n_feat = triplet_feature[box_per_batch:][n].squeeze(1)
+            a_feat = triplet_feature[:box_per_batch][a].unsqueeze(0)
+            p_feat = triplet_feature[box_per_batch:][p].unsqueeze(0)
+            n_feat = triplet_feature[box_per_batch:][n].unsqueeze(0)
+            #import IPython; IPython.embed()
             triplet_loss[r] = self.triplet_loss[r](a_feat, p_feat, n_feat)
 
-            b1_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
-            b2_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
-
             ## TODO triplet loss by batch?
-            for i in range(len(a)):
-                b1_dist += self.cos_dist(triplet_feature, a_feat[i].unsqueeze(0))
-                b2_dist += self.cos_dist(triplet_feature, p_feat[i].unsqueeze(0))
-            #try:
-            #    b1_dist = self.cos_dist(triplet_feature, a_feat)
-            #    b2_dist = self.cos_dist(triplet_feature, p_feat)
-            #except:
-            #    import IPython; IPython.embed()
+
+            #for i in range(len(a)):
+            #    b1_dist += self.cos_dist(triplet_feature, a_feat[i].unsqueeze(0))
+            #    b2_dist += self.cos_dist(triplet_feature, p_feat[i].unsqueeze(0))
+            try:
+                b1_dist = self.cos_dist(triplet_feature, a_feat)
+                b2_dist = self.cos_dist(triplet_feature, p_feat)
+            except:
+                import IPython; IPython.embed()
             #if a_feat[i].shape[0] == 1:
             #    import IPython; IPython
             #mean_dist = (self.cos_dist(triplet_feature, a_feat) + self.cos_dist(triplet_feature, p_feat))/2
-            b1_dist = b1_dist/len(a)
-            b2_dist = b2_dist/len(a)
-            mean_dist = (b1_dist + b2_dist)/2
+            #b1_dist = b1_dist/len(a)
+            #b2_dist = b2_dist/len(a)
+            #mean_dist = (b1_dist + b2_dist)/2
 
-            close_ind = (mean_dist > 0.5).nonzero()
-            b1_close = close_ind[:(close_ind < box_per_batch).nonzero().shape[0]]
-            b2_close = close_ind[(close_ind < box_per_batch).nonzero().shape[0]:] - proposals[0].bbox.shape[0]
+            b1_dist = b1_dist[:proposals[0].bbox.shape[0]]
+            b2_dist = b2_dist[proposals[0].bbox.shape[0]:]
+
+            #close_ind = (mean_dist > 0.5).nonzero()
+            #b1_close_1 = close_ind[:(close_ind < box_per_batch).nonzero().shape[0]]
+            #b2_close_2 = close_ind[(close_ind < box_per_batch).nonzero().shape[0]:] - proposals[0].bbox.shape[0]
+
+            b1_close = (b1_dist > 0.5).nonzero(as_tuple=False)
+            b2_close = (b2_dist > 0.5).nonzero(as_tuple=False)
+
+            #b1_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]]
+            #b2_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]] - proposals[0].bbox.shape[0]
+            #import IPython; IPython.embed()
 
             close_batch.append([e.item() for e in b1_close])
             close_batch.append([e.item() for e in b2_close])
+
             close_obj.append(close_batch)
-            return_loss_dict['loss_triplet%d'%r] = mean_dist.max().item() * triplet_loss[r]
+
+            #import IPython; IPython.embed()
+            #import IPython; IPython.embed()
+            return_loss_dict['loss_triplet%d'%r] = triplet_loss[r] / 2
 
         ### find more objects ###
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
@@ -257,8 +268,8 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
         ### triplet end ###
-        if (iteration % 5000) == 0:
-            import IPython; IPython.embed()
+        #if (iteration % 5000) == 0:
+        #    import IPython; IPython.embed()
         assert len(final_score_list) != 0
         #import IPython; IPython.embed()
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
