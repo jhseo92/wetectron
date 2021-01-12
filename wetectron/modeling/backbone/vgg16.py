@@ -7,6 +7,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from collections import OrderedDict
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 from wetectron.modeling import registry
 from wetectron.modeling.poolers import Pooler
 
@@ -130,24 +132,9 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
             nn.Linear(4096, 4096),
             nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(4096, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout()
-            #nn.Linear(256, 128),
-            #nn.ReLU(inplace=True),
-            #nn.Dropout()
+            nn.Linear(4096, 128)
         )
-        '''self.triplet = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.ReLU(inplace=True),
-            #nn.Dropout(),
-            nn.Linear(4096, 1024),
-            nn.ReLU(inplace=True)
-            #nn.Dropout(),
-            #nn.Linear(4096, 1024),
-            #nn.ReLU(inplace=True),
-            #nn.Dropout()
-        )'''
+
         if init_weights:
             self._initialize_weights()
 
@@ -159,16 +146,12 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
 
     def forward(self, x, proposals):
         # also pool featurs of multiple images into one huge ROI tensor
-        #import IPython; IPython.embed()
+
         roi_feature_map = self.pooler(x, proposals)
-        #import IPython; IPython.embed()
         roi_flat = roi_feature_map.view(roi_feature_map.shape[0], -1)
-        #import IPython; IPython.embed()
         roi_fc = self.classifier(roi_flat)
-        #import IPython; IPython.embed()
-        #torch.cuda.empty_cache()
-        roi_triplet = self.triplet(roi_flat)
-        #import IPython; IPython.embed()
+        roi_triplet = self.triplet(roi_feature_map)
+
         return roi_fc, roi_triplet
 
     def forward_pooler(self, x, proposals):

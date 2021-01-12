@@ -13,6 +13,8 @@ class Triplet_Loss(nn.Module):
         super(Triplet_Loss, self).__init__()
         self.triplet_loss = nn.TripletMarginWithDistanceLoss(
                                 distance_function=nn.CosineSimilarity(dim=1, eps=1e-6), margin=0.5)
+        self.triplet_loss_l2 = nn.TripletMarginWithDistanceLoss(
+                                distance_function=nn.PairwiseDistance(p=2), margin=0.5)
         self.pair_dist = nn.PairwiseDistance(p=2)
         self.cos_dist =  nn.CosineSimilarity(dim=1, eps=1e-6)
         self.sigmoid = nn.Sigmoid()
@@ -21,6 +23,8 @@ class Triplet_Loss(nn.Module):
         #cos = nn.CosineSimilarity(dim=1,eps=1e-6)
 
         output = self.triplet_loss(anchor, positive, negative)
+
+        output_l2 = self.triplet_loss_l2(anchor, positive, negative)
         #pos_dist = (anchor - positive).pow(2).sum(1)
         #neg_dist = (anchor - negative).pow(2).sum(1)
         #prob_dist = torch.cat((pos_dist, neg_dist),0)

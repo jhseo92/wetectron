@@ -200,17 +200,22 @@ class RoILossComputation(object):
 
             a = torch.tensor(ref[0].get(duplicate[0]))
             p = torch.tensor(ref[1].get(duplicate[0]))
-            n = [source_score[r][:,0].topk(len(a))[1].tolist()]
+            #n = [source_score[r][:,0].topk(len(a))[1].tolist()]
 
-            #p = p[:len(a)] if len(a) <= len(p) else a = a[:len(p)]
             if len(a) <= len(p):
                 p = p[:len(a)]
             else:
                 a = a[:len(p)]
 
+            n = [source_score[r][:,0].topk(len(a))[1].tolist()]
             a_feat = triplet_feature[:box_per_batch][a].squeeze()
             p_feat = triplet_feature[box_per_batch:][p].squeeze()
             n_feat = triplet_feature[box_per_batch:][n].squeeze()
+
+            if len(a) ==1 :
+                a_feat = triplet_feature[:box_per_batch][a].squeeze(1)
+                p_feat = triplet_feature[box_per_batch:][p].squeeze(1)
+                n_feat = triplet_feature[box_per_batch:][n].squeeze(1)
             triplet_loss[r] = self.triplet_loss[r](a_feat, p_feat, n_feat)
 
             b1_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
@@ -225,6 +230,8 @@ class RoILossComputation(object):
             #    b2_dist = self.cos_dist(triplet_feature, p_feat)
             #except:
             #    import IPython; IPython.embed()
+            #if a_feat[i].shape[0] == 1:
+            #    import IPython; IPython
             #mean_dist = (self.cos_dist(triplet_feature, a_feat) + self.cos_dist(triplet_feature, p_feat))/2
             b1_dist = b1_dist/len(a)
             b2_dist = b2_dist/len(a)
@@ -238,16 +245,6 @@ class RoILossComputation(object):
             close_batch.append([e.item() for e in b2_close])
             close_obj.append(close_batch)
             return_loss_dict['loss_triplet%d'%r] = mean_dist.max().item() * triplet_loss[r]
-            import IPython; IPython.embed()
-            #import IPython; IPython.embed()
-            #for i, ind in enumerate(close_ind):
-            #    if ind.item() > proposals[0].bbox.shape[0]:
-            #        close_ind[i] = ind.item() - proposals[0].bbox.shape[0]
-                    #close_obj[r][i].append(ind.item() - proposals[0].bbox.shape[0])
-            #import IPython; IPython.embed()
-            #close_obj.append(close_ind)
-            #triplets.append(t_dict)
-        import IPython; IPython.embed()
 
         ### find more objects ###
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
@@ -260,7 +257,7 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
         ### triplet end ###
-        if (iteration % 1000) == 0:
+        if (iteration % 5000) == 0:
             import IPython; IPython.embed()
         assert len(final_score_list) != 0
         #import IPython; IPython.embed()
