@@ -126,6 +126,20 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         self.triplet = nn.Sequential(
             nn.Linear(512 * 7 * 7, 4096),
             nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout()
+            #nn.Linear(256, 128),
+            #nn.ReLU(inplace=True),
+            #nn.Dropout()
+        )
+        '''self.triplet = nn.Sequential(
+            nn.Linear(512 * 7 * 7, 4096),
+            nn.ReLU(inplace=True),
             #nn.Dropout(),
             nn.Linear(4096, 1024),
             nn.ReLU(inplace=True)
@@ -133,13 +147,6 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
             #nn.Linear(4096, 1024),
             #nn.ReLU(inplace=True),
             #nn.Dropout()
-        )
-
-        '''self.triplet = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.PReLU(),
-            nn.Linear(4096, 128),
-            nn.PReLU()
         )'''
         if init_weights:
             self._initialize_weights()

@@ -85,7 +85,7 @@ class mist_layer(object):
 class oicr_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
     @torch.no_grad()
-    def __call__(self, proposals, source_score, labels, device, return_targets=False):
+    def __call__(self, proposals, source_score, labels, device, duplicate, return_targets=False):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
@@ -133,7 +133,8 @@ class oicr_layer(object):
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
             # loss_weights[ignore_inds] = 0
-        #import IPython; IPython.embed()
+            max_indexes[duplicate[0]] = (pseudo_labels == duplicate[0]).nonzero(as_tuple=False).tolist()
+
         return pseudo_labels, loss_weights, max_indexes
 
 class distance_layer(object):
