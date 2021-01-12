@@ -36,6 +36,7 @@ def compute_on_dataset(model, data_loader, device, timer=None, vis=True):
                     torch.cuda.synchronize()
                 timer.toc()
             output = [o.to(cpu_device) for o in output]
+            vis = True
             if vis:
                 data_path = data_loader.dataset.root
                 img_infos = [data_loader.dataset.get_img_info(ind) for ind in image_ids]
