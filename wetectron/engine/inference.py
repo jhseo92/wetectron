@@ -16,7 +16,7 @@ from ..utils.visualize import vis_results
 from .bbox_aug import im_detect_bbox_aug
 
 
-def compute_on_dataset(model, data_loader, device, timer=None, vis=False):
+def compute_on_dataset(model, data_loader, device, timer=None, vis=True):
     model.eval()
     results_dict = {}
     cpu_device = torch.device("cpu")

@@ -63,7 +63,7 @@ class mist_layer(object):
                 # Select background RoIs as those with <= FG_IOU_THRESHOLD
                 bg_inds = max_overlaps.lt(cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD).nonzero(as_tuple=False)[:,0]
                 pseudo_labels[bg_inds] = 0
-                import IPython; IPython.embed()
+                #import IPython; IPython.embed()
                 # compute regression targets
                 if return_targets:
                     matched_targets = gt_boxes[gt_assignment]
@@ -134,9 +134,11 @@ class oicr_layer(object):
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
             # loss_weights[ignore_inds] = 0
-            max_indexes_iou[duplicate[0]] = (pseudo_labels == duplicate[0]).nonzero(as_tuple=False).tolist()
+            #import IPython; IPython.embed()
+            max_indexes = (pseudo_labels == duplicate).nonzero(as_tuple=False).tolist()
+            #max_indexes_iou[duplicate] = (pseudo_labels == duplicate).nonzero(as_tuple=False).tolist()
 
-        return pseudo_labels, loss_weights, max_indexes, max_indexes_iou
+        return pseudo_labels, loss_weights, max_indexes#, max_indexes_iou
 
 class distance_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
@@ -160,7 +162,7 @@ class distance_layer(object):
             _prob[max_index].fill_(0)
             ### add closed object index to gt_boxes, classes, scores ###
 
-            if duplicate[0] == c.add(1).item():
+            if duplicate == c.add(1).item():
                 for close_ind in close_obj:
                     if close_ind != max_index:
                         gt_boxes = torch.cat((gt_boxes, proposals.bbox[close_ind].view(1, -1)), dim=0)

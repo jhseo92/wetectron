@@ -114,7 +114,7 @@ class RoILossComputation(object):
         else:
             raise ValueError('please use propoer ratio P.')
 
-    def __call__(self, class_score, det_score, ref_scores, proposals, targets, triplet_feature, iteration, epsilon=1e-10):
+    def __call__(self, class_score, det_score, ref_scores, proposals, targets, triplet_feature, iteration=0, epsilon=1e-10):
         """
         Arguments:
             class_score (list[Tensor])
@@ -140,8 +140,12 @@ class RoILossComputation(object):
         device = class_score.device
         num_classes = class_score.shape[1]
 
+        ref_score = ref_scores.copy()
+
         final_score = class_score * final_det_score
         final_score_list = final_score.split([len(p) for p in proposals])
+        for r, r_score in enumerate(ref_scores):
+            ref_score[r] = F.softmax(r_score, dim=1)
         ref_scores = [rs.split([len(p) for p in proposals]) for rs in ref_scores]
 
         return_loss_dict = dict(loss_img=0)
@@ -154,7 +158,7 @@ class RoILossComputation(object):
         max_indexes_iou = []
 
         target_cat = torch.cat((targets[0].get_field('labels').unique(), targets[1].get_field('labels').unique())).tolist()
-        duplicate = [int(item) for item, count in collections.Counter(target_cat).items() if count > 1]
+        duplicate = [int(item) for item, count in collections.Counter(target_cat).items() if count > 1][0]
 
         for i in range(num_refs):
             return_loss_dict['loss_ref%d'%i] = 0
@@ -172,10 +176,10 @@ class RoILossComputation(object):
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights, max_index, max_index_iou = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
+                pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
                                                         ### pseudo_label_generator
                 max_ind_dict[i] = max_index
-                max_indexes_iou.append(max_index_iou)
+                #max_indexes_iou.append(max_index_iou)
 
                 #return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
             batch_index[idx] = max_ind_dict.copy()
@@ -191,32 +195,45 @@ class RoILossComputation(object):
         close_obj = [] ##refine_time,batch_size
 
         ### triplet selection
-        duplicate_check = []
-        for b in batch_index:
-            duplicate_check += list(b[0].keys())
-        duplicate = [item for item, count in collections.Counter(duplicate_check).items() if count > 1]
+        #duplicate_check = []
+        #for b in batch_index:
+        #    duplicate_check += list(b[0].keys())
+        #duplicate = [item for item, count in collections.Counter(duplicate_check).items() if count > 1][0]
         triplet_batch = [list(x) for x in zip(*batch_index)]
 
         for r, ref in enumerate(triplet_batch): ## three == refine_time
             close_batch = []
             box_per_batch = proposals[0].bbox.shape[0]
 
-            a = torch.tensor(ref[0].get(duplicate[0]))
-            p = torch.tensor(ref[1].get(duplicate[0]))
-            n = source_score[r][:,0].argmax()
+            #a = torch.tensor(ref[0].get(duplicate))
+            #p = torch.tensor(ref[1].get(duplicate))
+            #n = source_score[r][:,0].argmax()
+            a = torch.tensor(ref[0])
+            p = torch.tensor(ref[1])
+            #n = source_score[r][:,0].topk(a.shape[0])[1]
 
-            #if len(a) <= len(p):
-            #    p = p[:len(a)]
-            #else:
-            #    a = a[:len(p)]
+            b1_triplet_feature = triplet_feature[:box_per_batch]
+            b2_triplet_feature = triplet_feature[box_per_batch:]
+            b1_ref_score = ref_score[r][:box_per_batch]
+            b2_ref_score = ref_score[r][box_per_batch:]
 
-            #n = [source_score[r][:,0].topk(len(a))[1].tolist()]
-            a_feat = triplet_feature[:box_per_batch][a].unsqueeze(0)
-            p_feat = triplet_feature[box_per_batch:][p].unsqueeze(0)
-            n_feat = triplet_feature[box_per_batch:][n].unsqueeze(0)
             #import IPython; IPython.embed()
-            triplet_loss[r] = self.triplet_loss[r](a_feat, p_feat, n_feat)
+            b1_n = b1_ref_score[:,0].topk(a.shape[0])[1]
+            b2_n = b2_ref_score[:,0].topk(a.shape[0])[1]
 
+            a_feat = triplet_feature[:box_per_batch][a].squeeze(1)
+            p_feat = triplet_feature[box_per_batch:][p].squeeze(1)
+            b1_n_feat = triplet_feature[b1_n].squeeze(1)
+            b2_n_feat = triplet_feature[b2_n].squeeze(1)
+
+            if a_feat.shape[1] < p_feat.shape[0]:
+                a_feat = a_feat.repeat(p_feat.shape[0],1)
+            elif a_feat.shape[1] > p_feat.shape[0]:
+                p_feat = p_feat.repeat(a_feat.shape[0],1)
+
+            triplet_loss[r] += self.triplet_loss[r](a_feat, p_feat, b1_n_feat)
+            triplet_loss[r] += self.triplet_loss[r](a_feat, p_feat, b2_n_feat)
+            import IPython; IPython.embed()
             ## TODO triplet loss by batch?
 
             #for i in range(len(a)):
@@ -241,8 +258,8 @@ class RoILossComputation(object):
             #b1_close_1 = close_ind[:(close_ind < box_per_batch).nonzero().shape[0]]
             #b2_close_2 = close_ind[(close_ind < box_per_batch).nonzero().shape[0]:] - proposals[0].bbox.shape[0]
 
-            b1_close = (b1_dist > 0.5).nonzero(as_tuple=False)
-            b2_close = (b2_dist > 0.5).nonzero(as_tuple=False)
+            b1_close = (b1_dist > 0.7).nonzero(as_tuple=False)
+            b2_close = (b2_dist > 0.7).nonzero(as_tuple=False)
 
             #b1_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]]
             #b2_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]] - proposals[0].bbox.shape[0]
