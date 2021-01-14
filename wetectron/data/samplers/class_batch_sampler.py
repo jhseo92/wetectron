@@ -149,7 +149,7 @@ class ClassBatchSampler(BatchSampler):
                         remain_ids.remove(inter_2)
                         break
         ###
-        #import IPython; IPython.embed()
+        import IPython; IPython.embed()
         return c_batches
 
     def __iter__(self):
