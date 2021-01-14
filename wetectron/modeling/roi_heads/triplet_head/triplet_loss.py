@@ -33,7 +33,7 @@ class Triplet_Loss(nn.Module):
         norm_dist = torch.cat((pos_dist, neg_dist), dim=0)
         norm_dist = F.normalize(norm_dist, p=2, dim=0)
 
-        output_l2 = F.relu(norm_dist[0] - norm_dist[1] + 0.7)
+        output_l2 = F.relu(norm_dist[0] - norm_dist[1] + 0.5)
 
         #pos_dist = (anchor - positive).pow(2).sum(1)
         #neg_dist = (anchor - negative).pow(2).sum(1)
