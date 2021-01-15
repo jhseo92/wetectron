@@ -180,7 +180,6 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
                                                         ### pseudo_label_generator
                 max_ind_dict[i] = max_index
-                #max_indexes_iou.append(max_index_iou)
 
                 #return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
             batch_index[idx] = max_ind_dict.copy()
@@ -194,13 +193,8 @@ class RoILossComputation(object):
         triplets = []
         triplet_loss = [0 for j in range(3)] ## refine_time
         close_obj = [] ##refine_time,batch_size
-
-        ### triplet selection
-        #duplicate_check = []
-        #for b in batch_index:
-        #    duplicate_check += list(b[0].keys())
-        #duplicate = [item for item, count in collections.Counter(duplicate_check).items() if count > 1][0]
         triplet_batch = [list(x) for x in zip(*batch_index)]
+        ### triplet selection
 
         for r, ref in enumerate(triplet_batch): ## three == refine_time
             close_batch = []
@@ -275,13 +269,13 @@ class RoILossComputation(object):
             #b1_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]]
             #b2_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]] - proposals[0].bbox.shape[0]
 
-
+            import IPython; IPython.embed()
             close_batch.append([e.item() for e in b1_close])
             close_batch.append([e.item() for e in b2_close])
 
             close_obj.append(close_batch)
 
-            return_loss_dict['loss_triplet%d'%r] = triplet_loss[r] / 2
+            return_loss_dict['loss_triplet%d'%r] = loss_weights[0].item() * triplet_loss[r] / 2 # batch_size
 
         ### find more objects ###
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
@@ -294,8 +288,8 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
         ### triplet end ###
-        if (iteration == 3000):
-            import IPython; IPython.embed()
+        #if (iteration == 3000):
+        #    import IPython; IPython.embed()
         assert len(final_score_list) != 0
 
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
