@@ -49,13 +49,13 @@ class PostProcessor(nn.Module):
                 the extra fields labels and scores
         """
         class_prob = x
-        
+
         # TODO think about a representation of batch of boxes
         image_shapes = [box.size for box in boxes]
         boxes_per_image = [len(box) for box in boxes]
         concat_boxes = torch.cat([a.bbox for a in boxes], dim=0)
         num_classes = class_prob.shape[1]
-        
+
         proposals = concat_boxes.repeat(1, num_classes)
         proposals = proposals.split(boxes_per_image, dim=0)
         class_prob = class_prob.split(boxes_per_image, dim=0)

@@ -269,7 +269,6 @@ class RoILossComputation(object):
             #b1_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]]
             #b2_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]] - proposals[0].bbox.shape[0]
 
-            import IPython; IPython.embed()
             close_batch.append([e.item() for e in b1_close])
             close_batch.append([e.item() for e in b2_close])
 
