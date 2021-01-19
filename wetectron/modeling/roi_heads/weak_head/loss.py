@@ -205,10 +205,10 @@ class RoILossComputation(object):
         b1_class_score = class_score[:box_per_batch]
         b2_class_score = class_score[box_per_batch:]
 
-        if b1_class_score.shape[0] < 300 or b2_class_score.shape[0] < 300:
+        if b1_class_score.shape[0] < 100 or b2_class_score.shape[0] < 100:
             topk = 50
         else:
-            topk = 300
+            topk = 100
 
         img_a = b1_class_score[:,duplicate].topk(topk)[1]
         img_p = b2_class_score[:,duplicate].topk(topk)[1]
@@ -315,7 +315,7 @@ class RoILossComputation(object):
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
-        if (iteration == 500):
+        if (iteration == 1000):
             import IPython; IPython.embed()
         assert len(final_score_list) != 0
 

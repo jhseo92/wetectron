@@ -120,9 +120,41 @@ class ClassBatchSampler(BatchSampler):
         img_labels = []
         img_labels = [0] * len(sampled_ids) * 2
 
+        co_mat = np.zeros([21,21])
+        co_mat2 = np.zeros([21,21])
+        tot_labels = np.zeros([21])
+        img_list = []
+
         for i in sampled_ids:
             #img_labels.append(self.get_img_labels(i).tolist())
             img_labels[i] = self.get_img_labels(i).tolist()
+            labels = list(set(img_labels[i]))
+            #import IPython; IPython.embed()
+            for l in labels:
+                co_mat[l,l] += 1
+            if len(labels) >= 2 :
+                comb = list(itertools.combinations(labels,2))
+                for c in comb :
+                    co_mat[c[0],c[1]] += 1
+
+            #import IPython; IPython.embed()
+            #img_list.append(data[3])
+            #tot_labels += im_labels
+        co_mat = co_mat.astype(int)
+        #import IPython; IPython.embed()
+        for a in range(20):
+            for b in range(20):
+                co_mat[b,a] = co_mat[a,b]
+
+        for i in range(20):
+            co_mat2[i] = co_mat[i]/co_mat[i][i]
+
+        for x in range(20):
+            for y in range(20):
+                if co_mat2[x,y] == 0:
+                    co_mat2[x,y] = 1e-9
+        co_occur = torch.Tensor(co_mat2)
+
         #import IPython; IPython.embed()
         for single in sampled_ids:
             if len(set(img_labels[single])) == 1:
