@@ -188,7 +188,7 @@ class distance_layer(object):
             pseudo_labels = gt_classes[gt_assignment, 0]
             loss_weights = gt_scores[gt_assignment, 0]
             # Select background RoIs as those with <= FG_IOU_THRESHOLD
-            bg_inds = max_overlaps.le(0.5).nonzero(as_tuple=False)[:,0]
+            bg_inds = max_overlaps.le(0.75).nonzero(as_tuple=False)[:,0]
             pseudo_labels[bg_inds] = 0
 
             # PCL_TRICK:
