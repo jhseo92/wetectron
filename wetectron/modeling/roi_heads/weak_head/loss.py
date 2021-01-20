@@ -160,6 +160,7 @@ class RoILossComputation(object):
 
         target_cat = torch.cat((targets[0].get_field('labels').unique(), targets[1].get_field('labels').unique())).tolist()
         duplicate = [int(item) for item, count in collections.Counter(target_cat).items() if count > 1][0]
+        loss_weights_list = [0] * len(ref_scores)
 
         for i in range(num_refs):
             return_loss_dict['loss_ref%d'%i] = 0
@@ -180,7 +181,7 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
                                                         ### pseudo_label_generator
                 max_ind_dict[i] = max_index
-
+                loss_weights_list[i] = loss_weights[0].item()
                 #return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
             batch_index[idx] = max_ind_dict.copy()
 
@@ -235,22 +236,24 @@ class RoILossComputation(object):
             b2_n_feat = triplet_feature[b2_n].squeeze(1)
 
             triplet_loss[r] += self.triplet_loss[r](a_feat, p_feat, b1_n_feat)
-            triplet_loss[r] += self.triplet_loss[r](a_feat, p_feat, b2_n_feat)
+            triplet_loss[r] += self.triplet_loss[r](p_feat, a_feat, b2_n_feat)
 
             ## TODO triplet loss by batch?
 
             b1_dist = torch.zeros(b1_triplet_feature.shape[0], dtype=torch.float, device=device)
             b2_dist = torch.zeros(b2_triplet_feature.shape[0], dtype=torch.float, device=device)
+            dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
+
             for i in range(len(a)):
-                #b1_dist += self.cos_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
-                #b2_dist += self.cos_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
-                b1_dist = self.pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
-                b2_dist = self.pair_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
+                b1_dist += self.pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
+                b2_dist += self.pair_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
+                #dist += (self.pair_dist(triplet_feature, a_feat[i].unsqueeze(0)) + self.pair_dist(triplet_feature, p_feat[i].unsqueeze(0)))
 
             #b1_dist = self.cos_dist(triplet_feature, a_feat)
             #b2_dist = self.cos_dist(triplet_feature, p_feat)
 
             #mean_dist = (self.cos_dist(triplet_feature, a_feat) + self.cos_dist(triplet_feature, p_feat))/2
+            #dist = dist/len(a)/2
             b1_dist = b1_dist/len(a)
             b2_dist = b2_dist/len(a)
             #mean_dist = (b1_dist + b2_dist)/2
@@ -259,12 +262,11 @@ class RoILossComputation(object):
             #b1_close_1 = close_ind[:(close_ind < box_per_batch).nonzero().shape[0]]
             #b2_close_2 = close_ind[(close_ind < box_per_batch).nonzero().shape[0]:] - proposals[0].bbox.shape[0]
 
-
-            #b1_close = (b1_dist > 0.5).nonzero(as_tuple=False)
-            #b2_close = (b2_dist > 0.5).nonzero(as_tuple=False)
-
             b1_close = (b1_dist < b1_dist[a].mean()).nonzero(as_tuple=False)
             b2_close = (b2_dist < b2_dist[p].mean()).nonzero(as_tuple=False)
+
+            #fst_close = (b1_dist < dist[a].mean()).nonzero(as_tuple=False)
+            #snd_close = (b2_dist < dist[p+box_per_batch].mean()).nonzero(as_tuple=False)
             #import IPython; IPython.embed()
             #b1_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]]
             #b2_close = b1_close[:(b1_close < box_per_batch).nonzero().shape[0]] - proposals[0].bbox.shape[0]
@@ -274,7 +276,7 @@ class RoILossComputation(object):
 
             close_obj.append(close_batch)
 
-            return_loss_dict['loss_triplet%d'%r] = loss_weights[0].item() * triplet_loss[r] / 2 # batch_size
+            return_loss_dict['loss_triplet%d'%r] = loss_weights_list[r] * triplet_loss[r] / 2 # batch_size
 
         ### find more objects ###
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
