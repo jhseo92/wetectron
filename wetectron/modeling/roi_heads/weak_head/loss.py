@@ -285,8 +285,8 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
         ### triplet end ###
-        #if (iteration == 3000):
-        #    import IPython; IPython.embed()
+        if (iteration == 3000):
+            import IPython; IPython.embed()
         assert len(final_score_list) != 0
 
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
