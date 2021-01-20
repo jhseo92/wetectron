@@ -188,6 +188,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
         save_labels(datasets, cfg.OUTPUT_DIR)
 
     data_loaders = []
+    img_data_loaders = []
     for dataset in datasets:
         #shuffle = False if cfg.SOLVER.CLASS_BATCH else True
         sampler = make_data_sampler(dataset, shuffle, is_distributed)  ##Randomsampler
@@ -206,7 +207,19 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
             collate_fn=collator,
             worker_init_fn=worker_init_reset_seed
         )
+
+        img_data_loader = torch.utils.data.DataLoader(
+            dataset,
+            num_workers=num_workers,
+            batch_sampler = batch_sampler,
+            collate_fn=collator,
+            worker_init_fn=worker_init_reset_seed
+        )
         data_loaders.append(data_loader)
+        img_data_loaders.append(img_data_loader)
+    #for data in img_data_loaders:
+    #    for d in data:
+    #        import IPython; IPython.embed()
     if is_train:
         # during training, a single (possibly concatenated) data_loader is returned
         assert len(data_loaders) == 1
