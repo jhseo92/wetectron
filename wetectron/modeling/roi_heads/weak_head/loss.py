@@ -6,6 +6,7 @@ import torch
 import collections
 import torch.nn as nn
 from torch.nn import functional as F
+import numpy as np
 
 from wetectron.layers import smooth_l1_loss
 from wetectron.modeling import registry
@@ -219,18 +220,13 @@ class RoILossComputation(object):
 
             a = torch.tensor(ref[0])
             p = torch.tensor(ref[1])
-            #import IPython; IPython.embed()
-            a_feat = triplet_feature[:box_per_batch][a].squeeze(1)
-            p_feat = triplet_feature[box_per_batch:][p].squeeze(1)
+            a_feat = b1_triplet_feature[a].squeeze(1)
+            p_feat = b2_triplet_feature[p].squeeze(1)
 
-            #while a_feat.shape[0] == p_feat.shape[0]:
-            #if a_feat.shape[0] < p_feat.shape[0]:
-            #    a_feat = a_feat.repeat(p_feat.shape[0],1)
-            #elif a_feat.shape[0] > p_feat.shape[0]:
-            #    p_feat = p_feat.repeat(a_feat.shape[0],1)
-
-            b1_n = b1_ref_score[:,0].topk(a_feat.shape[0])[1]
-            b2_n = b2_ref_score[:,0].topk(a_feat.shape[0])[1]
+            b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]/2))[1].cpu().detach().numpy()
+            b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]/2))[1].cpu().detach().numpy()
+            b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0], replace=False))
+            b2_n = torch.from_numpy(np.random.choice(b2_n, a_feat.shape[0], replace=False))
 
             b1_n_feat = triplet_feature[b1_n].squeeze(1)
             b2_n_feat = triplet_feature[b2_n].squeeze(1)
