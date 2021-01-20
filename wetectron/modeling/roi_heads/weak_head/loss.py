@@ -223,8 +223,8 @@ class RoILossComputation(object):
             a_feat = b1_triplet_feature[a].squeeze(1)
             p_feat = b2_triplet_feature[p].squeeze(1)
 
-            b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]/2))[1].cpu().detach().numpy()
-            b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]/2))[1].cpu().detach().numpy()
+            b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]*3/4))[1].cpu().detach().numpy()
+            b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]*3/4))[1].cpu().detach().numpy()
             b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0], replace=False))
             b2_n = torch.from_numpy(np.random.choice(b2_n, a_feat.shape[0], replace=False))
 
