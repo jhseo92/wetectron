@@ -133,17 +133,14 @@ class oicr_layer(object):
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
             # loss_weights[ignore_inds] = 0
-
             max_indexes = (pseudo_labels == duplicate).nonzero(as_tuple=False).tolist()
-            if len(max_indexes) == 0:
-                import IPython; IPython.embed()
 
         return pseudo_labels, loss_weights, max_indexes#, max_indexes_iou
 
 class distance_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
     @torch.no_grad()
-    def __call__(self, proposals, source_score, labels, device, close_obj, duplicate, return_targets=False):
+    def __call__(self, proposals, source_score, labels, device, close_obj, close_n, no_obj, duplicate, return_targets=False):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
@@ -153,6 +150,7 @@ class distance_layer(object):
         #positive_classes = _labels.eq(1).nonzero(as_tuple=False)[:, 0]
         positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
 
+        #proposals.add_field('scores', source_score[torch.tensor(close_obj).squeeze(),duplicate])
         for c in positive_classes:
             cls_prob = _prob[:, c]
             max_index = torch.argmax(cls_prob)
@@ -160,8 +158,8 @@ class distance_layer(object):
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)
             _prob[max_index].fill_(0)
-            ### add closed object index to gt_boxes, classes, scores ###
 
+            ### add closed object index to gt_boxes, classes, scores ###
             if duplicate == c.add(1).item():
                 for close_ind in close_obj:
                     if close_ind != max_index:
@@ -188,8 +186,16 @@ class distance_layer(object):
             pseudo_labels = gt_classes[gt_assignment, 0]
             loss_weights = gt_scores[gt_assignment, 0]
             # Select background RoIs as those with <= FG_IOU_THRESHOLD
-            bg_inds = max_overlaps.le(0.75).nonzero(as_tuple=False)[:,0]
+            bg_inds = max_overlaps.le(0.5).nonzero(as_tuple=False)[:,0]
             pseudo_labels[bg_inds] = 0
+
+
+            #close_n = torch.tensor(close_n)
+            #bg_inds = bg_inds.cpu().detach().numpy()
+            #close_n = close_n.cpu().detach().numpy()
+            #pseudo_labels[close_n] = 0
+            #ignore_ids = np.setdiff1d(bg_inds, close_n)
+            #loss_weights[ignore_ids] = 0
 
             # PCL_TRICK:
             # ignore_thres = 0.1

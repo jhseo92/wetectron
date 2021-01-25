@@ -13,7 +13,9 @@ from wetectron.layers import smooth_l1_loss
 from wetectron.modeling import registry
 from wetectron.modeling.utils import cat
 from wetectron.config import cfg
+from wetectron.structures.bounding_box import BoxList, BatchBoxList
 from wetectron.structures.boxlist_ops import boxlist_iou, boxlist_iou_async
+from wetectron.structures.boxlist_ops import boxlist_nms
 from wetectron.modeling.matcher import Matcher
 from wetectron.modeling.roi_heads.triplet_head.triplet_loss import Triplet_Loss
 
@@ -52,7 +54,55 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(1.0 / batch_size))
         return res
 
+def split_batch(input, b1_size):
+    b1 = input[:b1_size]
+    b2 = input[b1_size:]
+    return b1 ,b2
 
+def resize_dim(d1, d2):
+    if torch.is_tensor(d1):
+        d1 = d1.tolist()
+        d2 = d2.tolist()
+    if len(d1) > len(d2):
+        d2 = d2 * divmod(len(d1),len(d2))[0] + d2[:divmod(len(d1),len(d2))[1]]
+    elif len(d1) < len(d2):
+        d1 = d1 * divmod(len(d2),len(d1))[0] + d1[:divmod(len(d2),len(d1))[1]]
+    return d1, d2
+
+def prepare_boxlist(b1_close, b2_close, proposals, b1_ref_score, b2_ref_score, duplicate):
+    if len(b1_close) == 1:
+        b1_box = BoxList(proposals[0].bbox[torch.tensor(b1_close)].squeeze(0), proposals[0].size, mode=proposals[0].mode)
+        b1_box.add_field('scores', b1_ref_score[torch.tensor(b1_close),duplicate].squeeze())
+    if len(b2_close) == 1:
+        b2_box = BoxList(proposals[1].bbox[torch.tensor(b2_close)].squeeze(0), proposals[1].size, mode=proposals[1].mode)
+        b2_box.add_field('scores', b2_ref_score[torch.tensor(b2_close),duplicate].squeeze())
+    if len(b1_close) > 1:
+        b1_box = BoxList(proposals[0].bbox[torch.tensor(b1_close).squeeze()], proposals[0].size, mode=proposals[0].mode)
+        b1_box.add_field('scores', b1_ref_score[torch.tensor(b1_close).squeeze(),duplicate])
+    if len(b2_close) > 1:
+        b2_box = BoxList(proposals[1].bbox[torch.tensor(b2_close).squeeze()], proposals[1].size, mode=proposals[1].mode)
+        b2_box.add_field('scores', b2_ref_score[torch.tensor(b2_close).squeeze(),duplicate])
+
+    return b1_box, b2_box
+
+'''def measure_dist(b1_triplet_feature, b2_triplet_feature, a_feat, p_feat, a, p):
+
+    b1_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float)
+    b2_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float)
+
+    for i in range(len(a)):
+        b1_dist += self.pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
+    for i in range(len(p)):
+        b2_dist += self.pair_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
+        b1_dist = b1_dist/len(a)
+        b2_dist = b2_dist/len(p)
+
+        b1_close = (b1_dist <= b1_dist[a].mean()).nonzero(as_tuple=False).cpu()
+        b2_close = (b2_dist <= b2_dist[p].mean()).nonzero(as_tuple=False).cpu()
+
+
+    return b1_close, b2_close
+'''
 @registry.ROI_WEAK_LOSS.register("WSDDNLoss")
 class WSDDNLossComputation(object):
     """ Computes the loss for WSDDN."""
@@ -106,7 +156,7 @@ class RoILossComputation(object):
     def __init__(self, cfg):
         refine_p = cfg.MODEL.ROI_WEAK_HEAD.OICR_P
         self.type = "RoI_loss"
-        self.triplet_loss = [Triplet_Loss() for t in range(3)] ##refine_time
+        self.triplet_loss = Triplet_Loss() ##refine_time
         self.cos_dist =  nn.CosineSimilarity(dim=1, eps=1e-6)
         self.pair_dist = nn.PairwiseDistance(p=2)
         self.distance_layer = distance_layer()
@@ -174,63 +224,30 @@ class RoILossComputation(object):
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
 
             # MIL loss
-            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            #return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
             # Region loss
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
-                                                        ### pseudo_label_generator
                 max_ind_dict[i] = max_index
                 loss_weights_list[i] = loss_weights[0].item()
-                #return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
             batch_index[idx] = max_ind_dict.copy()
 
-            with torch.no_grad():
-                return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
-                for i in range(num_refs):
-                    ref_score_per_im = torch.sum(ref_scores[i][idx], dim=0)
-                    return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes)
-
-        triplets = []
         triplet_loss = [0 for j in range(3)] ## refine_time
-        close_obj = [] ##refine_time,batch_size
+        close_obj = []
+        close_n = []
         triplet_batch = [list(x) for x in zip(*batch_index)]
+
         ### triplet selection
         box_per_batch = proposals[0].bbox.shape[0]
-        b1_triplet_feature = triplet_feature[:box_per_batch]
-        b2_triplet_feature = triplet_feature[box_per_batch:]
-        b1_ref_score = ref_score[r][:box_per_batch]
-        b2_ref_score = ref_score[r][box_per_batch:]
-
-        ### img_triplet_loss ###
-        img_a = final_score_list[0][:,duplicate].topk(round(b1_ref_score.shape[0]*3/4))[1]
-        img_p = final_score_list[1][:,duplicate].topk(round(b2_ref_score.shape[0]*3/4))[1]
-        img_b1_neg = final_score_list[0][:,0].topk(round(b1_ref_score.shape[0]*3/4))[1]
-        img_b2_neg = final_score_list[1][:,0].topk(round(b2_ref_score.shape[0]*3/4))[1]
-
-        img_a_feat = b1_triplet_feature[img_a]
-        img_p_feat = b2_triplet_feature[img_p]
-        img_b1_neg_feat = b1_triplet_feature[img_b1_neg]
-        img_b2_neg_feat = b2_triplet_feature[img_b2_neg]
-
-        #img_triplet_loss = (self.triplet_loss(img_a_feat, img_p_feat, img_b1_neg_feat) + self.triplet_loss(img_p_feat, img_a_feat, img_b2_neg_feat))/2
-        #return_loss_dict['loss_img_triplet'] = final_score[:,duplicate].max().item() * img_triplet_loss
-
-        #b1_img_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
-        #b2_img_dist = torch.zeros(triplet_feature.shape[0], dtype=torch.float, device=device)
-
-        #for i in range(img_a.shape[0]):
-        #    b1_img_dist += self.pair_dist(triplet_feature, img_a_feat[i].unsqueeze(0))
-        #    b2_img_dist += self.pair_dist(triplet_feature, img_p_feat[i].unsqueeze(0))
-
-        #b1_img_dist = (b1_img_dist/topk).mean()
-        #b2_img_dist = (b2_img_dist/topk).mean()
-
+        b1_triplet_feature, b2_triplet_feature = split_batch(triplet_feature, box_per_batch)
         ### img_triplet_loss ###
         for r, ref in enumerate(triplet_batch): ## three == refine_time
             close_batch = []
+            n_batch = []
+            b1_ref_score, b2_ref_score = split_batch(ref_score[r], box_per_batch)
             b1_a = torch.tensor(ref[0].copy())
             b2_a = torch.tensor(ref[1].copy())
             #if len(ref[0]) > len(ref[1]):
@@ -243,19 +260,8 @@ class RoILossComputation(object):
             a_feat = b1_triplet_feature[a].squeeze(1)
             p_feat = b2_triplet_feature[p].squeeze(1)
 
-            #b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]*3/4))[1].cpu().detach().numpy()
-            #b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]*3/4))[1].cpu().detach().numpy()
-            #b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0], replace=False))
-            #b2_n = torch.from_numpy(np.random.choice(b2_n, p_feat.shape[0], replace=False))
-
-            #b1_n_feat = b1_triplet_feature[b1_n].squeeze(1)
-            #b2_n_feat = b2_triplet_feature[b2_n].squeeze(1)
-
-            ## TODO triplet loss by batch?
-
             b1_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float, device=device)
             b2_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float, device=device)
-            dist = torch.zeros(len(triplet_feature), dtype=torch.float, device=device)
 
             for i in range(len(a)):
                 b1_dist += self.pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
@@ -264,8 +270,8 @@ class RoILossComputation(object):
             b1_dist = b1_dist/len(a)
             b2_dist = b2_dist/len(p)
 
-            b1_close = (b1_dist < b1_dist[a].mean()).nonzero(as_tuple=False).cpu()
-            b2_close = (b2_dist < b2_dist[p].mean()).nonzero(as_tuple=False).cpu()
+            b1_close = (b1_dist <= b1_dist[a].mean()).nonzero(as_tuple=False).cpu()
+            b2_close = (b2_dist <= b2_dist[p].mean()).nonzero(as_tuple=False).cpu()
 
             close_batch.append([e.item() for e in b1_close])
             close_batch.append([e.item() for e in b2_close])
@@ -274,29 +280,39 @@ class RoILossComputation(object):
             b1_close = torch.cat((b1_a, b1_close)).unique().unsqueeze(1).tolist()
             b2_close = torch.cat((b2_a, b2_close)).unique().unsqueeze(1).tolist()
 
-            if r != 2 :
-                triplet_batch[r+1][0] = b1_close
-                triplet_batch[r+1][1] = b2_close
+            b1_box, b2_box = prepare_boxlist(b1_close, b2_close, proposals, b1_ref_score, b2_ref_score, duplicate)
 
-            if len(b1_close) > len(b2_close):
-                b2_close = b2_close*divmod(len(b1_close),len(b2_close))[0] + b2_close[:divmod(len(b1_close),len(b2_close))[1]]
-            elif len(b1_close) < len(b2_close):
-                b1_close = b1_close*divmod(len(b2_close),len(b1_close))[0] + b1_close[:divmod(len(b2_close),len(b1_close))[1]]
-            #import IPython; IPython.embed()
+            b1_no_obj = len(boxlist_nms(b1_box, 1e-6).bbox) if len(b1_box.bbox) > 1 else 1
+            b2_no_obj = len(boxlist_nms(b2_box, 1e-6).bbox) if len(b2_box.bbox) > 1 else 1
+            b1_gt = targets[0].get_field('labels')
+            b2_gt = targets[1].get_field('labels')
 
+            b1_close, b2_close = resize_dim(b1_close, b2_close)
             a_feat = b1_triplet_feature[torch.tensor(b1_close)].squeeze(1)
             p_feat = b2_triplet_feature[torch.tensor(b2_close)].squeeze(1)
 
-            b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]/2))[1].cpu().detach().numpy()
-            b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]/2))[1].cpu().detach().numpy()
+            b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]*0.7))[1].cpu().detach().numpy()
+            b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]*0.7))[1].cpu().detach().numpy()
             b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0]))
             b2_n = torch.from_numpy(np.random.choice(b2_n, p_feat.shape[0]))
 
             b1_n_feat = b1_triplet_feature[b1_n].squeeze(1)
             b2_n_feat = b2_triplet_feature[b2_n].squeeze(1)
-            if a_feat.shape != p_feat.shape != b1_n_feat.shape:
-                import IPython; IPython.embed()
-            triplet_loss[r] = self.triplet_loss[r](a_feat, p_feat, b1_n_feat) + self.triplet_loss[r](p_feat, a_feat, b2_n_feat)
+
+            b1_n_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float, device=device)
+            b2_n_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float, device=device)
+            for i in range(len(a_feat)):
+                b1_n_dist += self.pair_dist(b1_triplet_feature, b1_n_feat[i].unsqueeze(0))
+                b2_n_dist += self.pair_dist(b2_triplet_feature, b2_n_feat[i].unsqueeze(0))
+            b1_n_dist = b1_n_dist/len(a_feat)
+            b2_n_dist = b2_n_dist/len(p_feat)
+            b1_n_close = (b1_n_dist <= b1_n_dist[b1_n].mean()).nonzero(as_tuple=False)
+            b2_n_close = (b2_n_dist <= b2_n_dist[b2_n].mean()).nonzero(as_tuple=False)
+            n_batch.append([e.item() for e in b1_n_close])
+            n_batch.append([e.item() for e in b2_n_close])
+            close_n.append(n_batch)
+
+            triplet_loss[r] = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
 
             return_loss_dict['loss_triplet%d'%r] = loss_weights_list[r] * triplet_loss[r]/2
 
@@ -305,16 +321,33 @@ class RoILossComputation(object):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
 
+            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            if idx == 0:
+            #    img_score_per_im[duplicate] = img_score_per_im[duplicate]/b1_no_obj
+                no_obj = b1_no_obj
+            elif idx == 1:
+            #    img_score_per_im[duplicate] = img_score_per_im[duplicate]/b2_no_obj
+                no_obj = b2_no_obj
+            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], duplicate)
+                pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], close_n[i][idx], no_obj, duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
-        ### triplet end ###
-        if (iteration == 3000):
-            import IPython; IPython.embed()
-        assert len(final_score_list) != 0
 
+            with torch.no_grad():
+                return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
+                for i in range(num_refs):
+                    ref_score_per_im = torch.sum(ref_scores[i][idx], dim=0)
+                    return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes)
+
+
+        ### triplet end ###
+
+        assert len(final_score_list) != 0
+        #if iteration % 200 == 0:
+        #    import IPython; IPython.embed()
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
             return_loss_dict[l] /= len(final_score_list)
             return_acc_dict[a] /= len(final_score_list)
