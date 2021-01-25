@@ -85,24 +85,24 @@ def prepare_boxlist(b1_close, b2_close, proposals, b1_ref_score, b2_ref_score, d
 
     return b1_box, b2_box
 
-'''def measure_dist(b1_triplet_feature, b2_triplet_feature, a_feat, p_feat, a, p):
-
-    b1_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float)
-    b2_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float)
+def measure_dist(b1_triplet_feature, b2_triplet_feature, a_feat, p_feat, a, p, device):
+    pair_dist = nn.PairwiseDistance(p=2)
+    b1_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float, device=device)
+    b2_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float, device=device)
 
     for i in range(len(a)):
-        b1_dist += self.pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
+        b1_dist += pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
     for i in range(len(p)):
-        b2_dist += self.pair_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
-        b1_dist = b1_dist/len(a)
-        b2_dist = b2_dist/len(p)
+        b2_dist += pair_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
 
-        b1_close = (b1_dist <= b1_dist[a].mean()).nonzero(as_tuple=False).cpu()
-        b2_close = (b2_dist <= b2_dist[p].mean()).nonzero(as_tuple=False).cpu()
+    b1_dist = (b1_dist/len(a)).cpu().detach()
+    b2_dist = (b2_dist/len(p)).cpu().detach()
 
+    b1_close = (b1_dist <= b1_dist[a].mean()).nonzero(as_tuple=False).cpu().detach()
+    b2_close = (b2_dist <= b2_dist[p].mean()).nonzero(as_tuple=False).cpu().detach()
 
     return b1_close, b2_close
-'''
+
 @registry.ROI_WEAK_LOSS.register("WSDDNLoss")
 class WSDDNLossComputation(object):
     """ Computes the loss for WSDDN."""
@@ -207,13 +207,12 @@ class RoILossComputation(object):
         num_refs = len(ref_scores)
         batch_index = [0] * len(final_score_list)
         source_score = [0] * len(ref_scores)
-
         max_indexes_iou = []
 
         target_cat = torch.cat((targets[0].get_field('labels').unique(), targets[1].get_field('labels').unique())).tolist()
         duplicate = [int(item) for item, count in collections.Counter(target_cat).items() if count > 1][0]
         loss_weights_list = [0] * len(ref_scores)
-
+        labels = []
         for i in range(num_refs):
             return_loss_dict['loss_ref%d'%i] = 0
             return_acc_dict['acc_ref%d'%i] = 0
@@ -222,7 +221,7 @@ class RoILossComputation(object):
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
-
+            labels.append(labels_per_im)
             # MIL loss
             #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             #return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
@@ -260,18 +259,7 @@ class RoILossComputation(object):
             a_feat = b1_triplet_feature[a].squeeze(1)
             p_feat = b2_triplet_feature[p].squeeze(1)
 
-            b1_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float, device=device)
-            b2_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float, device=device)
-
-            for i in range(len(a)):
-                b1_dist += self.pair_dist(b1_triplet_feature, a_feat[i].unsqueeze(0))
-            for i in range(len(p)):
-                b2_dist += self.pair_dist(b2_triplet_feature, p_feat[i].unsqueeze(0))
-            b1_dist = b1_dist/len(a)
-            b2_dist = b2_dist/len(p)
-
-            b1_close = (b1_dist <= b1_dist[a].mean()).nonzero(as_tuple=False).cpu()
-            b2_close = (b2_dist <= b2_dist[p].mean()).nonzero(as_tuple=False).cpu()
+            b1_close, b2_close = measure_dist(b1_triplet_feature, b2_triplet_feature, a_feat, p_feat, a, p, device)
 
             close_batch.append([e.item() for e in b1_close])
             close_batch.append([e.item() for e in b2_close])
@@ -291,6 +279,7 @@ class RoILossComputation(object):
             a_feat = b1_triplet_feature[torch.tensor(b1_close)].squeeze(1)
             p_feat = b2_triplet_feature[torch.tensor(b2_close)].squeeze(1)
 
+            ### negative ###
             b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]*0.7))[1].cpu().detach().numpy()
             b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]*0.7))[1].cpu().detach().numpy()
             b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0]))
@@ -299,28 +288,17 @@ class RoILossComputation(object):
             b1_n_feat = b1_triplet_feature[b1_n].squeeze(1)
             b2_n_feat = b2_triplet_feature[b2_n].squeeze(1)
 
-            b1_n_dist = torch.zeros(len(b1_triplet_feature), dtype=torch.float, device=device)
-            b2_n_dist = torch.zeros(len(b2_triplet_feature), dtype=torch.float, device=device)
-            for i in range(len(a_feat)):
-                b1_n_dist += self.pair_dist(b1_triplet_feature, b1_n_feat[i].unsqueeze(0))
-                b2_n_dist += self.pair_dist(b2_triplet_feature, b2_n_feat[i].unsqueeze(0))
-            b1_n_dist = b1_n_dist/len(a_feat)
-            b2_n_dist = b2_n_dist/len(p_feat)
-            b1_n_close = (b1_n_dist <= b1_n_dist[b1_n].mean()).nonzero(as_tuple=False)
-            b2_n_close = (b2_n_dist <= b2_n_dist[b2_n].mean()).nonzero(as_tuple=False)
+            b1_n_close, b2_n_close = measure_dist(b1_triplet_feature, b2_triplet_feature, b1_n_feat, b2_n_feat, b1_n, b2_n, device)
             n_batch.append([e.item() for e in b1_n_close])
             n_batch.append([e.item() for e in b2_n_close])
             close_n.append(n_batch)
-
+            ### negative ###
+            #import IPython; IPython.embed()
             triplet_loss[r] = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
-
             return_loss_dict['loss_triplet%d'%r] = loss_weights_list[r] * triplet_loss[r]/2
 
         ### find more objects ###
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
-            labels_per_im = targets_per_im.get_field('labels').unique()
-            labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
-
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             if idx == 0:
             #    img_score_per_im[duplicate] = img_score_per_im[duplicate]/b1_no_obj
@@ -328,19 +306,19 @@ class RoILossComputation(object):
             elif idx == 1:
             #    img_score_per_im[duplicate] = img_score_per_im[duplicate]/b2_no_obj
                 no_obj = b2_no_obj
-            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels[idx].clamp(0, 1))
 
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels_per_im, device, close_obj[i][idx], close_n[i][idx], no_obj, duplicate)
+                pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score, labels[idx], device, close_obj[i][idx], close_n[i][idx], no_obj, duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
 
             with torch.no_grad():
-                return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
+                return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels[idx], img_score_per_im, num_classes)
                 for i in range(num_refs):
                     ref_score_per_im = torch.sum(ref_scores[i][idx], dim=0)
-                    return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels_per_im[1:], ref_score_per_im[1:], num_classes)
+                    return_acc_dict['acc_ref%d'%i] += compute_avg_img_accuracy(labels[idx][1:], ref_score_per_im[1:], num_classes)
 
 
         ### triplet end ###
