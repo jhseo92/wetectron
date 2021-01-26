@@ -291,12 +291,10 @@ class RoILossComputation(object):
             a_feat = b1_triplet_feature[torch.tensor(b1_close)].squeeze(1)
             p_feat = b2_triplet_feature[torch.tensor(b2_close)].squeeze(1)
 
-            #b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]*0.7))[1].cpu().detach().numpy()
-            #b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]*0.7))[1].cpu().detach().numpy()
-            #b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0]))
-            #b2_n = torch.from_numpy(np.random.choice(b2_n, p_feat.shape[0]))
-            b1_n = b1_ref_score[:,0].topk(len(a_feat))[1].cpu().detach().numpy()
-            b2_n = b2_ref_score[:,0].topk(len(p_feat))[1].cpu().detach().numpy()
+            b1_n = b1_ref_score[:,0].topk(round(b1_ref_score.shape[0]*0.9))[1].cpu().detach().numpy()
+            b2_n = b2_ref_score[:,0].topk(round(b2_ref_score.shape[0]*0.9))[1].cpu().detach().numpy()
+            b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0]))
+            b2_n = torch.from_numpy(np.random.choice(b2_n, p_feat.shape[0]))
 
             b1_n_feat = b1_triplet_feature[b1_n].squeeze(1)
             b2_n_feat = b2_triplet_feature[b2_n].squeeze(1)
@@ -325,10 +323,10 @@ class RoILossComputation(object):
 
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             if idx == 0:
-            #    img_score_per_im[duplicate] = img_score_per_im[duplicate]/b1_no_obj
+                img_score_per_im[duplicate] = img_score_per_im[duplicate]/b1_no_obj
                 no_obj = b1_no_obj
             elif idx == 1:
-            #    img_score_per_im[duplicate] = img_score_per_im[duplicate]/b2_no_obj
+                img_score_per_im[duplicate] = img_score_per_im[duplicate]/b2_no_obj
                 no_obj = b2_no_obj
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
 

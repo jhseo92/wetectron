@@ -189,7 +189,6 @@ class distance_layer(object):
             bg_inds = max_overlaps.le(0.5).nonzero(as_tuple=False)[:,0]
             pseudo_labels[bg_inds] = 0
 
-
             #close_n = torch.tensor(close_n)
             #bg_inds = bg_inds.cpu().detach().numpy()
             #close_n = close_n.cpu().detach().numpy()
