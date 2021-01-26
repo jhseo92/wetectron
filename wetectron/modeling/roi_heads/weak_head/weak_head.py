@@ -51,7 +51,7 @@ class ROIWeakHead(torch.nn.Module):
         x, roi_feature_map = self.feature_extractor(features, proposals)    #vgg16 roi_layer
         #import IPython; IPython.embed()
         # final classifier that converts the features into predictions
-        cls_score, det_score, ref_scores = self.predictor(x, proposals)
+        cls_score, det_score, ref_scores, ref_final = self.predictor(x, proposals)
                                                 ##roi_weak_predictors
         #import IPython; IPython.embed()
         if not self.training:
@@ -59,10 +59,11 @@ class ROIWeakHead(torch.nn.Module):
                 final_score = cls_score * det_score
             else:
                 final_score = torch.mean(torch.stack(ref_scores), dim=0)
+                final_score = (final_score + ref_final)/2
             result = self.post_processor(final_score, proposals)
             return x, result, {}, {}
 
-        loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores,
+        loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores, ref_final,
                                                      proposals, targets, roi_feature_map, iteration)
 
         return (
