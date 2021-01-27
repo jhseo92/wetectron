@@ -14,7 +14,7 @@ class Triplet_Loss(nn.Module):
         self.triplet_loss = nn.TripletMarginWithDistanceLoss(
                                 distance_function=nn.CosineSimilarity(dim=1, eps=1e-6), margin=0.5)
         self.triplet_loss_l2 = nn.TripletMarginWithDistanceLoss(
-                                distance_function=nn.PairwiseDistance(p=2), margin=0.7)
+                                distance_function=nn.PairwiseDistance(p=2), margin=0.5)
         self.l2_dist = nn.PairwiseDistance(p=2)
         self.cos_dist =  nn.CosineSimilarity(dim=1, eps=1e-6)
         self.sigmoid = nn.Sigmoid()

@@ -255,7 +255,7 @@ class RoILossComputation(object):
 
         b1_bbox = torch.unique(b1_adj_box).tolist()
         b2_bbox = torch.unique(b2_adj_box).tolist()
-        #b1_bbox, b2_bbox = resize_dim(torch.unique(b1_adj_box).tolist(), torch.unique(b2_adj_box).tolist())
+
         a = torch.tensor(b1_bbox)
         p = torch.tensor(b2_bbox)
         a_feat = b1_triplet_feature[a].squeeze(1)
@@ -264,12 +264,12 @@ class RoILossComputation(object):
 
         b1_bbox, b2_bbox = resize_dim(b1_bbox, b2_bbox)
 
-        b1_n = b1_avg_score[:,0].topk(len(b1_bbox))[1].cpu().detach().numpy()
-        b2_n = b2_avg_score[:,0].topk(len(b2_bbox))[1].cpu().detach().numpy()
-        #b1_n = b1_avg_score[:,0].topk(round(b1_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
-        #b2_n = b2_avg_score[:,0].topk(round(b2_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
-        #b1_n = torch.from_numpy(np.random.choice(b1_n, a_feat.shape[0]))
-        #b2_n = torch.from_numpy(np.random.choice(b2_n, p_feat.shape[0]))
+        #b1_n = b1_avg_score[:,0].topk(len(b1_bbox))[1].cpu().detach().numpy()
+        #b2_n = b2_avg_score[:,0].topk(len(b2_bbox))[1].cpu().detach().numpy()
+        b1_n = b1_avg_score[:,0].topk(round(b1_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
+        b2_n = b2_avg_score[:,0].topk(round(b2_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
+        b1_n = torch.from_numpy(np.random.choice(b1_n, len(b1_bbox)))
+        b2_n = torch.from_numpy(np.random.choice(b2_n, len(b2_bbox)))
 
         b1_n_feat = b1_triplet_feature[b1_n].squeeze(1)
         b2_n_feat = b2_triplet_feature[b2_n].squeeze(1)
@@ -285,8 +285,6 @@ class RoILossComputation(object):
 
         b1_add_close = b1_close.tolist()
         b2_add_close = b2_close.tolist()
-        #b1_add_close = torch.cat((a, torch.tensor(b1_close).squeeze()), dim=0).unique().unsqueeze(1).tolist()
-        #b2_add_close = torch.cat((p, torch.tensor(b2_close).squeeze()), dim=0).unique().unsqueeze(1).tolist()
 
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()

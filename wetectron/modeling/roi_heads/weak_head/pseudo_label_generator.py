@@ -186,15 +186,18 @@ class distance_layer(object):
             pseudo_labels = gt_classes[gt_assignment, 0]
             loss_weights = gt_scores[gt_assignment, 0]
             # Select background RoIs as those with <= FG_IOU_THRESHOLD
-            bg_inds = max_overlaps.le(0.9).nonzero(as_tuple=False)[:,0]
-            pseudo_labels[bg_inds] = 0
+            bg_inds = max_overlaps.le(0.75).nonzero(as_tuple=False)[:,0]
+            #pseudo_labels[bg_inds] = 0
             #import IPython; IPython.embed()
-            #close_n = torch.tensor(close_n)
-            #bg_inds = bg_inds.cpu().detach().numpy()
-            #close_n = close_n.cpu().detach().numpy()
-            #pseudo_labels[close_n] = 0
-            #ignore_ids = np.setdiff1d(bg_inds, close_n)
-            #loss_weights[ignore_ids] = 0
+            try:
+                close_n = torch.tensor(close_n)
+                pseudo_labels[close_n] = 0
+                bg_inds = bg_inds.cpu().detach().numpy()
+                close_n = close_n.cpu().detach().numpy()
+                ignore_ids = np.setdiff1d(bg_inds, close_n)
+                loss_weights[ignore_ids] = 0
+            except:
+                import IPython; IPython.embed()
 
             # PCL_TRICK:
             # ignore_thres = 0.1
