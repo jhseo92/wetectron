@@ -206,6 +206,8 @@ class RoILossComputation(object):
 
         b1_adj_box = torch.zeros((0,1), dtype=torch.int, device=device)
         b2_adj_box = torch.zeros((0,1), dtype=torch.int, device=device)
+        b1_n_boxes = torch.zeros((0,1), dtype=torch.int, device=device)
+        b2_n_boxes = torch.zeros((0,1), dtype=torch.int, device=device)
         num_refs = len(ref_scores)
         batch_index = [0] * len(final_score_list)
         source_score = [0] * len(ref_scores)
@@ -231,12 +233,14 @@ class RoILossComputation(object):
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights, max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
+                pseudo_labels, loss_weights, max_index, n_max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
                 if idx == 0:
                     b1_adj_box = torch.cat((b1_adj_box, max_index))
+                    b1_n_boxes = torch.cat((b1_n_boxes, n_max_index))
                 elif idx == 1:
                     b2_adj_box = torch.cat((b2_adj_box, max_index))
+                    b2_n_boxes = torch.cat((b2_n_boxes, n_max_index))
                 loss_weights_list[i] = loss_weights[0].item()
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
@@ -262,21 +266,30 @@ class RoILossComputation(object):
         p_feat = b2_triplet_feature[p].squeeze(1)
         b1_close, b2_close = measure_dist(b1_triplet_feature, b2_triplet_feature, a_feat, p_feat, a, p, device)
 
-        b1_bbox, b2_bbox = resize_dim(b1_bbox, b2_bbox)
+        #b1_n = b1_avg_score[:,0].topk(round(b1_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
+        #b2_n = b2_avg_score[:,0].topk(round(b2_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
+        #b1_n = torch.from_numpy(np.random.choice(b1_n, len(b1_bbox)))
+        #b2_n = torch.from_numpy(np.random.choice(b2_n, len(b2_bbox)))
 
-        #b1_n = b1_avg_score[:,0].topk(len(b1_bbox))[1].cpu().detach().numpy()
-        #b2_n = b2_avg_score[:,0].topk(len(b2_bbox))[1].cpu().detach().numpy()
-        b1_n = b1_avg_score[:,0].topk(round(b1_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
-        b2_n = b2_avg_score[:,0].topk(round(b2_avg_score.shape[0]*0.9))[1].cpu().detach().numpy()
-        b1_n = torch.from_numpy(np.random.choice(b1_n, len(b1_bbox)))
-        b2_n = torch.from_numpy(np.random.choice(b2_n, len(b2_bbox)))
+        b1_n = b1_avg_score[:,0].topk(len(a))[1].unsqueeze(1)#.cpu().detach().numpy()
+        b2_n = b2_avg_score[:,0].topk(len(p))[1].unsqueeze(1)#.cpu().detach().numpy()
+        b1_n_boxes = torch.cat((b1_n_boxes, b1_n))
+        b2_n_boxes = torch.cat((b2_n_boxes, b2_n))
 
-        b1_n_feat = b1_triplet_feature[b1_n].squeeze(1)
-        b2_n_feat = b2_triplet_feature[b2_n].squeeze(1)
+        b1_n_feat = b1_triplet_feature[b1_n_boxes].squeeze(1)
+        b2_n_feat = b2_triplet_feature[b2_n_boxes].squeeze(1)
         b1_n_close, b2_n_close = measure_dist(b1_triplet_feature, b2_triplet_feature, b1_n_feat, b2_n_feat, b1_n, b2_n, device)
 
-        a_feat = b1_triplet_feature[torch.tensor(b1_bbox)]
-        p_feat = b2_triplet_feature[torch.tensor(b2_bbox)]
+        b1_bbox, b2_bbox = resize_dim(b1_bbox, b2_bbox)
+        b1_n_boxes, b2_n_boxes = resize_dim(b1_n_boxes.tolist(), b2_n_boxes.tolist())
+        b1_bbox, b1_n_boxes = resize_dim(b1_bbox, b1_n_boxes)
+        b2_bbox, b2_n_boxes = resize_dim(b2_bbox, b2_n_boxes)
+
+        #import IPython; IPython.embed()
+        a_feat = b1_triplet_feature[torch.tensor(b1_bbox)].squeeze(1)
+        p_feat = b2_triplet_feature[torch.tensor(b2_bbox)].squeeze(1)
+        b1_n_feat = b1_triplet_feature[torch.tensor(b1_n_boxes)].squeeze(1)
+        b2_n_feat = b2_triplet_feature[torch.tensor(b2_n_boxes)].squeeze(1)
 
         triplet_loss = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
         return_loss_dict['loss_triplet'] = loss_weights[0].item() * triplet_loss

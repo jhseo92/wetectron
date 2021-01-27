@@ -89,20 +89,23 @@ class oicr_layer(object):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
-        max_indexes = dict()
+        #max_indexes = torch.zeros((len(positive_classes),1), dtype=torch.long, device=device)
         # not using the background class
         _prob = source_score[:, 1:].clone()
         _labels = labels[1:]
-        #positive_classes = _labels.eq(1).nonzero(as_tuple=False)[:, 0]
-        positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
 
-        for no_c in positive_classes:
-            max_indexes[no_c.item() + 1] = 0
+        #positive_classes = _labels.eq(1).nonzero(as_tuple=False)[:, 0]
+
+        positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
+        max_indexes = torch.zeros((0,1), dtype=torch.long, device=device)
+        n_max_indexes = torch.zeros((0,1), dtype=torch.long, device=device)
+        #for no_c in positive_classes:
+        #    max_indexes[no_c.item() + 1] = 0
 
         for c in positive_classes:
             cls_prob = _prob[:, c]
             max_index = torch.argmax(cls_prob)
-            max_indexes[c.item() + 1] = max_index.item()
+            #max_indexes[c.item() + 1] = max_index.item()
             gt_boxes = torch.cat((gt_boxes, proposals.bbox[max_index].view(1, -1)), dim=0)
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)
@@ -133,9 +136,15 @@ class oicr_layer(object):
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
             # loss_weights[ignore_inds] = 0
-            max_indexes = (pseudo_labels == duplicate).nonzero(as_tuple=False)
 
-        return pseudo_labels, loss_weights, max_indexes#, max_indexes_iou
+            #max_indexes = (pseudo_labels == duplicate).nonzero(as_tuple=False)
+            for i, n in enumerate((positive_classes + 1)):
+                if n == duplicate:
+                    max_indexes = torch.cat((max_indexes, (pseudo_labels == n).nonzero(as_tuple=False)))
+                else :
+                    n_max_indexes = torch.cat((n_max_indexes, (pseudo_labels == n).nonzero(as_tuple=False)))
+
+        return pseudo_labels, loss_weights, max_indexes, n_max_indexes
 
 class distance_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
