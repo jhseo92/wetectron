@@ -33,7 +33,8 @@ VOC_CATEGORIES = ["__background",
 
 def compute_colors_for_labels(labels):
     """ Simple function that adds fixed colors depending on the class """
-    palette = torch.tensor([2 ** 25 - 1, 2 ** 15 - 1, 2 ** 21 - 1])
+    #palette = torch.tensor([2 ** 25 - 1, 2 ** 15 - 1, 2 ** 21 - 1])
+    palette = torch.tensor([0, 255, 0])
     colors = labels[:, None] * palette
     colors = (colors % 255).numpy().astype("bool")
     return colors
@@ -144,7 +145,7 @@ def overlay_class_names(image, predictions, CATEGORIES):
         x, y = box[:2]
         s = template.format(label, score)
         cv2.putText(
-            image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 255, 0), 3
+            image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 0), 1
         )
     return image
 

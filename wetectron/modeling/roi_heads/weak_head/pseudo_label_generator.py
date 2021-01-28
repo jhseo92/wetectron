@@ -89,7 +89,7 @@ class oicr_layer(object):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
         gt_classes = torch.zeros((0, 1), dtype=torch.long, device=device)
         gt_scores = torch.zeros((0, 1), dtype=torch.float, device=device)
-        #max_indexes = torch.zeros((len(positive_classes),1), dtype=torch.long, device=device)
+
         # not using the background class
         _prob = source_score[:, 1:].clone()
         _labels = labels[1:]
@@ -196,9 +196,9 @@ class distance_layer(object):
             loss_weights = gt_scores[gt_assignment, 0]
             # Select background RoIs as those with <= FG_IOU_THRESHOLD
             bg_inds = max_overlaps.le(0.75).nonzero(as_tuple=False)[:,0]
-            #pseudo_labels[bg_inds] = 0
+            pseudo_labels[bg_inds] = 0
             #import IPython; IPython.embed()
-            try:
+            '''try:
                 close_n = torch.tensor(close_n)
                 pseudo_labels[close_n] = 0
                 bg_inds = bg_inds.cpu().detach().numpy()
@@ -207,7 +207,7 @@ class distance_layer(object):
                 loss_weights[ignore_ids] = 0
             except:
                 import IPython; IPython.embed()
-
+'''
             # PCL_TRICK:
             # ignore_thres = 0.1
             # ignore_inds = max_overlaps.le(ignore_thres).nonzero(as_tuple=False)[:,0]
