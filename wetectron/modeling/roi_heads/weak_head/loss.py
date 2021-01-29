@@ -4,12 +4,15 @@
 # --------------------------------------------------------
 import torch
 from torch.nn import functional as F
+import collections
 
 from wetectron.layers import smooth_l1_loss
 from wetectron.modeling import registry
 from wetectron.modeling.utils import cat
 from wetectron.config import cfg
 from wetectron.structures.boxlist_ops import boxlist_iou, boxlist_iou_async
+from wetectron.structures.bounding_box import BoxList, BatchBoxList
+from wetectron.structures.boxlist_ops import boxlist_nms
 from wetectron.modeling.matcher import Matcher
 
 from .pseudo_label_generator import oicr_layer, mist_layer
@@ -47,6 +50,18 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(1.0 / batch_size))
         return res
 
+def get_geometry(bbox, score, device):
+    centroids = torch.zeros((0,2), dtype=float, device=device)
+    for b in bbox:
+        x_centre = (b[0] + b[2]) / 2
+        y_centre = (b[1] + b[3]) / 2
+        centre = torch.tensor([x_centre, y_centre]).to(device).unsqueeze(0)
+        centroids = torch.cat((centroids, centre))
+
+    centroids_trans = centroids - centroids[score.argmax()]
+    mean_vector = (centroids - centroids[score.argmax()]).mean(dim=0)
+    distances = torch.cdist(centroids, centroids[score.argmax()].unsqueeze(0), p=2).to(device)
+    return centroids, centroids_trans, mean_vector, distances
 
 @registry.ROI_WEAK_LOSS.register("WSDDNLoss")
 class WSDDNLossComputation(object):
@@ -120,14 +135,14 @@ class RoILossComputation(object):
             return_loss_dict (dictionary): all the losses
             return_acc_dict (dictionary): all the accuracies of image-level classification
         """
-        class_score = cat(class_score, dim=0)
-        class_score = F.softmax(class_score, dim=1)
+        class_logit = cat(class_score, dim=0)
+        class_score = F.softmax(class_logit, dim=1)
 
-        det_score = cat(det_score, dim=0)
-        det_score_list = det_score.split([len(p) for p in proposals])
+        det_logit = cat(det_score, dim=0)
+        det_logit_list = det_logit.split([len(p) for p in proposals])
         final_det_score = []
-        for det_score_per_image in det_score_list:
-            det_score_per_image = F.softmax(det_score_per_image, dim=0)
+        for det_logit_per_image in det_logit_list:
+            det_score_per_image = F.softmax(det_logit_per_image, dim=0)
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
 
@@ -148,7 +163,17 @@ class RoILossComputation(object):
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
+            _labels = labels_per_im[1:]
+            positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device).add(1)
             # MIL loss
+            ### img_geometry ###
+            #for p in positive_classes:
+                #gt_box = BoxList(targets_per_im.bbox[targets_per_im.get_field('labels') == p], proposals_per_image.size, mode=proposals_per_image.mode)
+            #adj_iou = boxlist_iou(proposals_per_image, proposals_per_image)
+
+            #import IPython; IPython.embed()
+
+            ### img_geometry ###
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
             # Region loss
@@ -157,7 +182,21 @@ class RoILossComputation(object):
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
-
+                ### positive_classes = c.add(1)
+                '''for p in positive_classes:
+                    if (pseudo_labels == p).nonzero(as_tuple=False).shape[0] == 1:
+                        p_gt = (pseudo_labels == p).nonzero(as_tuple=False).squeeze(0)
+                    else :
+                        p_gt = (pseudo_labels == p).nonzero(as_tuple=False).squeeze()
+                    gt_box = BoxList(targets_per_im.bbox[targets_per_im.get_field('labels') == p], proposals_per_image.size, mode=proposals_per_image.mode)
+                    p_box = BoxList(proposals_per_image.bbox[p_gt], proposals_per_image.size, mode=proposals_per_image.mode)
+                    p_box.add_field('scores', source_score[p_gt,p])
+                    p_score = p_box.get_field('scores')
+                    gt_iou = boxlist_iou(gt_box, p_box)
+                    box_iou = boxlist_iou(p_box, p_box)
+                    box_iou_mean = box_iou.mean(dim=1)
+                    centroids, centroids_trans, mean_vector, distances = get_geometry(p_box.bbox, p_score, device)
+                    import IPython; IPython.embed()'''
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
                 for i in range(num_refs):
