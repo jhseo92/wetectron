@@ -14,6 +14,7 @@ from wetectron.structures.boxlist_ops import boxlist_iou, boxlist_iou_async
 from wetectron.structures.bounding_box import BoxList, BatchBoxList
 from wetectron.structures.boxlist_ops import boxlist_nms
 from wetectron.modeling.matcher import Matcher
+from wetectron.modeling.roi_heads.weak_head.gcn import GCNLayer, SkipConnection, GatedSkipConnection, GCNBlock, ReadOut, Predictor, GCNNet
 
 from .pseudo_label_generator import oicr_layer, mist_layer
 
@@ -122,7 +123,7 @@ class RoILossComputation(object):
             self.roi_layer = mist_layer(refine_p)
         else:
             raise ValueError('please use propoer ratio P.')
-
+        #self.gcn = GCNNet(3, 3, 42, 4096, 1, 4096, 2048, 1024, 20, False, 'gsc').to('cuda')
     def __call__(self, class_score, det_score, ref_scores, proposals, targets, epsilon=1e-10):
         """
         Arguments:
@@ -135,16 +136,19 @@ class RoILossComputation(object):
             return_loss_dict (dictionary): all the losses
             return_acc_dict (dictionary): all the accuracies of image-level classification
         """
-        class_logit = cat(class_score, dim=0)
-        class_score = F.softmax(class_logit, dim=1)
+        class_score = cat(class_score, dim=0)
+        class_score = F.softmax(class_score, dim=1)
 
-        det_logit = cat(det_score, dim=0)
-        det_logit_list = det_logit.split([len(p) for p in proposals])
+        det_score = cat(det_score, dim=0)
+        det_score_list = det_score.split([len(p) for p in proposals])
         final_det_score = []
-        for det_logit_per_image in det_logit_list:
-            det_score_per_image = F.softmax(det_logit_per_image, dim=0)
+        for det_score_per_image in det_score_list:
+            det_score_per_image = F.softmax(det_score_per_image, dim=0)
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
+
+        class_score_list = class_score.split([len(p) for p in proposals])
+        det_score_list = final_det_score.split([len(p) for p in proposals])
 
         device = class_score.device
         num_classes = class_score.shape[1]
@@ -160,21 +164,30 @@ class RoILossComputation(object):
             return_loss_dict['loss_ref%d'%i] = 0
             return_acc_dict['acc_ref%d'%i] = 0
 
-        for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
+        for idx, (final_score_per_im, cls_score_per_im, det_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, class_score_list, det_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
             _labels = labels_per_im[1:]
             positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device).add(1)
+
             # MIL loss
+            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             ### img_geometry ###
             #for p in positive_classes:
-                #gt_box = BoxList(targets_per_im.bbox[targets_per_im.get_field('labels') == p], proposals_per_image.size, mode=proposals_per_image.mode)
-            #adj_iou = boxlist_iou(proposals_per_image, proposals_per_image)
-
-            #import IPython; IPython.embed()
+            #    gt_box = BoxList(targets_per_im.bbox[targets_per_im.get_field('labels') == p], proposals_per_image.size, mode=proposals_per_image.mode)
+            #    img_centroids, img_centroids_trans, img_mean_vector, img_distances = get_geometry(proposals_per_image, img_score_per_im, device)
+            #    import IPython; IPython.embed()
+            adj_iou = boxlist_iou(proposals_per_image, proposals_per_image)
+            node_feature = torch.zeros((len(proposals_per_image), 0), dtype=torch.float, device=device)
+            node_feature = torch.cat( (node_feature, cls_score_per_im), dim=1)
+            node_feature = torch.cat( (node_feature, det_score_per_im), dim=1)
+            #img_centroids, img_centroids_trans, img_mean_vector, img_distances = get_geometry(proposals_per_image, img_score_per_im,
+            net = GCNNet(3, 3, 42, len(proposals_per_image), 1, 4096, 4096, 4096, 21, False, 'gsc').to('cuda')
+            net(node_feature, adj_iou)
+            import IPython; IPython.embed()
 
             ### img_geometry ###
-            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
             # Region loss
             for i in range(num_refs):
