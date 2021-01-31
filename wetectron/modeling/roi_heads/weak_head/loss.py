@@ -70,25 +70,39 @@ class WSDDNLossComputation(object):
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
         final_det_score = []
+        sig_det_score = []
         for det_score_per_image in det_score_list:
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
             final_det_score.append(det_score_per_image)
+
+            sig_det_score_per_image = torch.tanh(det_score_per_image)
+            sig_det_score.append(sig_det_score_per_image)
+
         final_det_score = cat(final_det_score, dim=0)
+        sig_det_score = cat(sig_det_score, dim=0)
 
         device = class_score.device
         num_classes = class_score.shape[1]
 
         final_score = class_score * final_det_score
         final_score_list = final_score.split([len(p) for p in proposals])
+
+        sig_final_score = class_score * sig_det_score
+        sig_final_score_list = sig_final_score.split([len(p) for p in proposals])
         total_loss = 0
         accuracy_img = 0
-        for final_score_per_im, targets_per_im in zip(final_score_list, targets):
+        for final_score_per_im, sig_final_score_per_im, targets_per_im in zip(final_score_list, sig_final_score_list, targets):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
-            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            total_loss += F.binary_cross_entropy(img_score_per_im, labels_per_im)
-            accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
 
+            #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            sig_img_score_per_im = torch.clamp(torch.sum(sig_final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+
+            #total_loss += F.binary_cross_entropy(img_score_per_im, labels_per_im)
+            total_loss += F.binary_cross_entropy(sig_img_score_per_im, labels_per_im)
+            import IPython; IPython.embed()
+            #accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
+            accuracy_img += compute_avg_img_accuracy(labels_per_im, sig_img_score_per_im, num_classes)
         total_loss = total_loss / len(final_score_list)
         accuracy_img = accuracy_img / len(final_score_list)
 
