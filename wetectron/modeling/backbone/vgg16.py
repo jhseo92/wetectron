@@ -152,6 +152,7 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         roi_feature_map = self.pooler(x, proposals)
         roi_flat = roi_feature_map.view(roi_feature_map.shape[0], -1)
         roi_fc = self.classifier(roi_flat)
+
         roi_triplet = F.normalize(self.triplet(roi_fc), p=2, dim=1)
         #roi_triplet = self.triplet(roi_fc)
         return roi_fc, roi_triplet

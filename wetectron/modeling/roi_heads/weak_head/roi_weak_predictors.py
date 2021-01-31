@@ -67,7 +67,6 @@ class OICRPredictor(nn.Module):
         self.ref1 = nn.Linear(num_inputs, num_classes)
         self.ref2 = nn.Linear(num_inputs, num_classes)
         self.ref3 = nn.Linear(num_inputs, num_classes)
-        self.ref_final = nn.Linear(num_inputs, num_classes)
 
         self._initialize_weights()
 
@@ -89,7 +88,6 @@ class OICRPredictor(nn.Module):
         ref1_logit = self.ref1(x)
         ref2_logit = self.ref2(x)
         ref3_logit = self.ref3(x)
-        ref_final_logit = self.ref_final(x)
 
         if not self.training:
             cls_logit = F.softmax(cls_logit, dim=1)
@@ -104,12 +102,11 @@ class OICRPredictor(nn.Module):
             ref1_logit = F.softmax(ref1_logit, dim=1)
             ref2_logit = F.softmax(ref2_logit, dim=1)
             ref3_logit = F.softmax(ref3_logit, dim=1)
-            ref_final_logit = F.softmax(ref_final_logit, dim=1)
         else:
             final_det_logit = det_logit
 
         ref_logits = [ref1_logit, ref2_logit, ref3_logit]
-        return cls_logit, final_det_logit, ref_logits, ref_final_logit
+        return cls_logit, final_det_logit, ref_logits
 
 
 @registry.ROI_WEAK_PREDICTOR.register("MISTPredictor")

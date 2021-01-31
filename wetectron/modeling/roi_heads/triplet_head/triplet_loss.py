@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pytorch_metric_learning import losses, distances, reducers
+#from pytorch_metric_learning import losses, distances, reducers
 
 class Triplet_Loss(nn.Module):
     """
@@ -34,14 +34,6 @@ class Triplet_Loss(nn.Module):
         #output_l2 = F.relu((self.l2_dist(anchor, positive) - self.l2_dist(anchor, negative) + 0.7).mean())
         #output_l2 = self.triplet_loss_l2(anchor, positive, negative)
         #output_l2 = F.relu(norm_dist[0] - norm_dist[1] + 0.5)
-        #import IPython; IPython.embed()
-        #pos_dist = (anchor - positive).pow(2).sum(1)
-        #neg_dist = (anchor - negative).pow(2).sum(1)
-        #prob_dist = torch.cat((pos_dist, neg_dist),0)
         #losses = F.relu(pos_dist - neg_dist + 0.5)
 
-        #p = self.pair_dist(anchor, positive)
-        #n = self.pair_dist(anchor, negative)
-        #prob = torch.cat((p,n),0)
-        #import IPython; IPython.embed()
         return output_l2
