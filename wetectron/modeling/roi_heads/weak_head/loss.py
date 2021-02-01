@@ -280,15 +280,39 @@ class RoILossComputation(object):
         a, b1_n_boxes = resize_dim(a.tolist(), b1_n_boxes)
         p, b2_n_boxes = resize_dim(p.tolist(), b2_n_boxes)
 
-        #if len(a) <= len(b1_n_boxes):
-        #    b1_n_boxes = b1_n_boxes[-len(a):]
-        #if len(p) <= len(b2_n_boxes):
-        #    b2_n_boxes = b2_n_boxes[-len(p):]
-
         a_feat = b1_triplet_feature[torch.tensor(a)].squeeze(1)
         p_feat = b2_triplet_feature[torch.tensor(p)].squeeze(1)
         b1_n_feat = b1_triplet_feature[torch.tensor(b1_n_boxes)].squeeze(1)
         b2_n_feat = b2_triplet_feature[torch.tensor(b2_n_boxes)].squeeze(1)
+
+        if len(b1_close) == 0:
+            b1_close = a
+        if len(b2_close) == 0:
+            b2_close = p
+        try:
+            b1_box, b2_box = prepare_boxlist(b1_close, b2_close, proposals, b1_avg_score, b2_avg_score, duplicate)
+        except:
+            import IPython; IPython.embed()
+        if len(b1_box) != 1:
+            b1_box_nms = boxlist_nms(b1_box, 0.5)
+        elif len(b1_box) == 1:
+            b1_box_nms = b1_box
+        if len(b2_box) != 1:
+            b2_box_nms = boxlist_nms(b2_box, 0.5)
+        elif len(b2_box) == 1:
+            b2_box_nms = b2_box
+
+        b1_gt = targets[0].get_field('labels')
+        b2_gt = targets[1].get_field('labels')
+        #close_box = [b1_box_nms.bbox, b2_box_nms.bbox]
+
+        b1_pred = torch.zeros((0,1), dtype=torch.long, device=device)
+        b2_pred = torch.zeros((0,1), dtype=torch.long, device=device)
+        for b in b1_box_nms.bbox:
+            b1_pred = torch.cat((b1_pred, torch.all((proposals[0].bbox == b), dim=1).nonzero(as_tuple=False)))
+        for b in b2_box_nms.bbox:
+            b2_pref = torch.cat((b1_pred, torch.all((proposals[1].bbox == b), dim=1).nonzero(as_tuple=False)))
+        close_box = [b1_pred, b2_pred]
 
         try:
             triplet_loss = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
@@ -303,7 +327,8 @@ class RoILossComputation(object):
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score[i], labels_per_im, device, close_obj[0][idx], duplicate)
+                #pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score[i], labels_per_im, device, close_obj[0][idx], duplicate)
+                pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score[i], labels_per_im, device, close_box[idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
                 with torch.no_grad():
                     return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
