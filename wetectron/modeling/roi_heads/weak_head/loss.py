@@ -95,14 +95,14 @@ class WSDDNLossComputation(object):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
 
-            #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            sig_img_score_per_im = torch.clamp(torch.sum(sig_final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            #sig_img_score_per_im = torch.clamp(torch.sum(sig_final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
 
-            #total_loss += F.binary_cross_entropy(img_score_per_im, labels_per_im)
-            total_loss += F.binary_cross_entropy(sig_img_score_per_im, labels_per_im)
-            import IPython; IPython.embed()
-            #accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
-            accuracy_img += compute_avg_img_accuracy(labels_per_im, sig_img_score_per_im, num_classes)
+            total_loss += F.binary_cross_entropy(img_score_per_im, labels_per_im)
+            #total_loss += F.binary_cross_entropy(sig_img_score_per_im, labels_per_im)
+            #import IPython; IPython.embed()
+            accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
+            #accuracy_img += compute_avg_img_accuracy(labels_per_im, sig_img_score_per_im, num_classes)
         total_loss = total_loss / len(final_score_list)
         accuracy_img = accuracy_img / len(final_score_list)
 
