@@ -71,17 +71,17 @@ def resize_dim(d1, d2):
 
 def prepare_boxlist(b1_close, b2_close, proposals, b1_ref_score, b2_ref_score, duplicate):
     if len(b1_close) == 1:
-        b1_box = BoxList(proposals[0].bbox[torch.tensor(b1_close)].squeeze(0), proposals[0].size, mode=proposals[0].mode)
-        b1_box.add_field('scores', b1_ref_score[torch.tensor(b1_close),duplicate].squeeze())
+        b1_box = BoxList(proposals[0].bbox[torch.tensor(b1_close).clone().detach()].squeeze(0), proposals[0].size, mode=proposals[0].mode)
+        b1_box.add_field('scores', b1_ref_score[torch.tensor(b1_close).clone().detach(),duplicate].squeeze())
     if len(b2_close) == 1:
-        b2_box = BoxList(proposals[1].bbox[torch.tensor(b2_close)].squeeze(0), proposals[1].size, mode=proposals[1].mode)
-        b2_box.add_field('scores', b2_ref_score[torch.tensor(b2_close),duplicate].squeeze())
+        b2_box = BoxList(proposals[1].bbox[torch.tensor(b2_close).clone().detach()].squeeze(0), proposals[1].size, mode=proposals[1].mode)
+        b2_box.add_field('scores', b2_ref_score[torch.tensor(b2_close).clone().detach(),duplicate].squeeze())
     if len(b1_close) > 1:
-        b1_box = BoxList(proposals[0].bbox[torch.tensor(b1_close).squeeze()], proposals[0].size, mode=proposals[0].mode)
-        b1_box.add_field('scores', b1_ref_score[torch.tensor(b1_close).squeeze(),duplicate])
+        b1_box = BoxList(proposals[0].bbox[torch.tensor(b1_close).clone().detach().squeeze()], proposals[0].size, mode=proposals[0].mode)
+        b1_box.add_field('scores', b1_ref_score[torch.tensor(b1_close).clone().detach().squeeze(),duplicate])
     if len(b2_close) > 1:
-        b2_box = BoxList(proposals[1].bbox[torch.tensor(b2_close).squeeze()], proposals[1].size, mode=proposals[1].mode)
-        b2_box.add_field('scores', b2_ref_score[torch.tensor(b2_close).squeeze(),duplicate])
+        b2_box = BoxList(proposals[1].bbox[torch.tensor(b2_close).clone().detach().squeeze()], proposals[1].size, mode=proposals[1].mode)
+        b2_box.add_field('scores', b2_ref_score[torch.tensor(b2_close).clone().detach().squeeze(),duplicate])
 
     return b1_box, b2_box
 
@@ -233,7 +233,7 @@ class RoILossComputation(object):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights, max_index, n_max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
-                #return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
+
                 if idx == 0:
                     b1_adj_box = torch.cat((b1_adj_box, max_index))
                     b1_n_boxes = torch.cat((b1_n_boxes, n_max_index))
@@ -243,9 +243,6 @@ class RoILossComputation(object):
                 loss_weights_list[i] = loss_weights[0].item()
 
         triplet_loss = [0] ## refine_time
-        close_obj = []
-        close_n = []
-        close_batch = []
         ### triplet selection
         box_per_batch = proposals[0].bbox.shape[0]
         avg_score = torch.mean(torch.stack(ref_score), dim=0)
@@ -267,10 +264,8 @@ class RoILossComputation(object):
 
         b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[p].mean())/2).nonzero(as_tuple=False).cpu()
         b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[p].mean())/2).nonzero(as_tuple=False).cpu()
-        close_batch.append([e.item() for e in b1_close])
-        close_batch.append([e.item() for e in b2_close])
-        close_obj.append(close_batch)
-
+        #b1_close = (dist[:box_per_batch] <= dist[a].mean()).nonzero(as_tuple=False).cpu()
+        #b2_close = (dist[box_per_batch:] <= dist[p].mean()).nonzero(as_tuple=False).cpu()
 
         if len(b1_n_boxes) == 0:
             b1_n_boxes = torch.cat((b1_n_boxes, b1_avg_score[:,0].topk(len(a))[1].unsqueeze(1)))
@@ -289,16 +284,13 @@ class RoILossComputation(object):
             b1_close = a
         if len(b2_close) == 0:
             b2_close = p
-        try:
-            b1_box, b2_box = prepare_boxlist(b1_close, b2_close, proposals, b1_avg_score, b2_avg_score, duplicate)
-        except:
-            import IPython; IPython.embed()
+        b1_box, b2_box = prepare_boxlist(b1_close, b2_close, proposals, b1_avg_score, b2_avg_score, duplicate)
         if len(b1_box) != 1:
-            b1_box_nms = boxlist_nms(b1_box, 0.5)
+            b1_box_nms = boxlist_nms(b1_box, 0.3)
         elif len(b1_box) == 1:
             b1_box_nms = b1_box
         if len(b2_box) != 1:
-            b2_box_nms = boxlist_nms(b2_box, 0.5)
+            b2_box_nms = boxlist_nms(b2_box, 0.3)
         elif len(b2_box) == 1:
             b2_box_nms = b2_box
 
@@ -311,13 +303,10 @@ class RoILossComputation(object):
         for b in b1_box_nms.bbox:
             b1_pred = torch.cat((b1_pred, torch.all((proposals[0].bbox == b), dim=1).nonzero(as_tuple=False)))
         for b in b2_box_nms.bbox:
-            b2_pref = torch.cat((b1_pred, torch.all((proposals[1].bbox == b), dim=1).nonzero(as_tuple=False)))
+            b2_pred = torch.cat((b2_pred, torch.all((proposals[1].bbox == b), dim=1).nonzero(as_tuple=False)))
         close_box = [b1_pred, b2_pred]
-
-        try:
-            triplet_loss = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
-        except:
-            import IPython; IPython.embed()
+        import IPython; IPython.embed()
+        triplet_loss = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
         return_loss_dict['loss_triplet'] = loss_weights[0].item() * triplet_loss
 
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
