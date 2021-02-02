@@ -99,13 +99,10 @@ class oicr_layer(object):
         positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
         max_indexes = torch.zeros((0,1), dtype=torch.long, device=device)
         n_max_indexes = torch.zeros((0,1), dtype=torch.long, device=device)
-        #for no_c in positive_classes:
-        #    max_indexes[no_c.item() + 1] = 0
 
         for c in positive_classes:
             cls_prob = _prob[:, c]
             max_index = torch.argmax(cls_prob)
-            #max_indexes[c.item() + 1] = max_index.item()
             gt_boxes = torch.cat((gt_boxes, proposals.bbox[max_index].view(1, -1)), dim=0)
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)

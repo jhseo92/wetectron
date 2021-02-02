@@ -204,10 +204,13 @@ class RoILossComputation(object):
         return_loss_dict = dict(loss_img=0)
         return_acc_dict = dict(acc_img=0)
 
-        b1_adj_box = torch.zeros((0,1), dtype=torch.int, device=device)
-        b2_adj_box = torch.zeros((0,1), dtype=torch.int, device=device)
-        b1_n_boxes = torch.zeros((0,1), dtype=torch.int, device=device)
-        b2_n_boxes = torch.zeros((0,1), dtype=torch.int, device=device)
+        b1_adj_box = torch.zeros((0), dtype=torch.int, device=device)
+        b2_adj_box = torch.zeros((0), dtype=torch.int, device=device)
+        b1_n_boxes = torch.zeros((0), dtype=torch.int, device=device)
+        b2_n_boxes = torch.zeros((0), dtype=torch.int, device=device)
+        max_ind = torch.zeros((0), dtype=torch.long, device=device)
+        n_max_ind = torch.zeros((0), dtype=torch.long, device=device)
+
         num_refs = len(ref_scores)
         batch_index = [0] * len(final_score_list)
         source_score = [0] * len(ref_scores)
@@ -232,17 +235,23 @@ class RoILossComputation(object):
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                pseudo_labels, loss_weights, max_index, n_max_index = self.roi_layer(proposals_per_image, source_score[i], labels_per_im, device, duplicate)
-
+                ###
+                _prob = source_score[i][:, 1:].clone()
+                _labels = labels_per_im[1:]
+                positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
+                for c in positive_classes:
+                    cls_prob = _prob[:,c]
+                    if c.add(1).item() == duplicate:
+                        max_ind = torch.argmax(cls_prob).unsqueeze(0)
+                    elif c.add(1).item() != duplicate:
+                        n_max_ind = torch.argmax(cls_prob).unsqueeze(0)
                 if idx == 0:
-                    b1_adj_box = torch.cat((b1_adj_box, max_index))
-                    b1_n_boxes = torch.cat((b1_n_boxes, n_max_index))
+                    b1_adj_box = torch.cat((b1_adj_box, max_ind))
+                    b1_n_boxes = torch.cat((b1_n_boxes, n_max_ind))
                 elif idx == 1:
-                    b2_adj_box = torch.cat((b2_adj_box, max_index))
-                    b2_n_boxes = torch.cat((b2_n_boxes, n_max_index))
-                loss_weights_list[i] = loss_weights[0].item()
+                    b2_adj_box = torch.cat((b2_adj_box, max_ind))
+                    b2_n_boxes = torch.cat((b2_n_boxes, n_max_ind))
 
-        triplet_loss = [0] ## refine_time
         ### triplet selection
         box_per_batch = proposals[0].bbox.shape[0]
         avg_score = torch.mean(torch.stack(ref_score), dim=0)
@@ -262,8 +271,8 @@ class RoILossComputation(object):
             import IPython; IPython.embed()
         dist = dist/(len(a)+len(p))
 
-        b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[p].mean())/2).nonzero(as_tuple=False).cpu()
-        b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[p].mean())/2).nonzero(as_tuple=False).cpu()
+        b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
+        b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
         #b1_close = (dist[:box_per_batch] <= dist[a].mean()).nonzero(as_tuple=False).cpu()
         #b2_close = (dist[box_per_batch:] <= dist[p].mean()).nonzero(as_tuple=False).cpu()
 
@@ -280,23 +289,22 @@ class RoILossComputation(object):
         b1_n_feat = b1_triplet_feature[torch.tensor(b1_n_boxes)].squeeze(1)
         b2_n_feat = b2_triplet_feature[torch.tensor(b2_n_boxes)].squeeze(1)
 
-        if len(b1_close) == 0:
+        '''if len(b1_close) == 0:
             b1_close = a
         if len(b2_close) == 0:
             b2_close = p
         b1_box, b2_box = prepare_boxlist(b1_close, b2_close, proposals, b1_avg_score, b2_avg_score, duplicate)
         if len(b1_box) != 1:
-            b1_box_nms = boxlist_nms(b1_box, 0.3)
+            b1_box_nms = boxlist_nms(b1_box, 0.5)
         elif len(b1_box) == 1:
             b1_box_nms = b1_box
         if len(b2_box) != 1:
-            b2_box_nms = boxlist_nms(b2_box, 0.3)
+            b2_box_nms = boxlist_nms(b2_box, 0.5)
         elif len(b2_box) == 1:
             b2_box_nms = b2_box
 
         b1_gt = targets[0].get_field('labels')
         b2_gt = targets[1].get_field('labels')
-        #close_box = [b1_box_nms.bbox, b2_box_nms.bbox]
 
         b1_pred = torch.zeros((0,1), dtype=torch.long, device=device)
         b2_pred = torch.zeros((0,1), dtype=torch.long, device=device)
@@ -304,10 +312,11 @@ class RoILossComputation(object):
             b1_pred = torch.cat((b1_pred, torch.all((proposals[0].bbox == b), dim=1).nonzero(as_tuple=False)))
         for b in b2_box_nms.bbox:
             b2_pred = torch.cat((b2_pred, torch.all((proposals[1].bbox == b), dim=1).nonzero(as_tuple=False)))
-        close_box = [b1_pred, b2_pred]
+        '''
+        close_box = [b1_close, b2_close]
         import IPython; IPython.embed()
         triplet_loss = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
-        return_loss_dict['loss_triplet'] = loss_weights[0].item() * triplet_loss
+        return_loss_dict['loss_triplet'] = avg_score[:,1:].max().item() * triplet_loss
 
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
@@ -316,7 +325,6 @@ class RoILossComputation(object):
             for i in range(num_refs):
                 source_score[i] = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
                 lmda = 3 if i == 0 else 1
-                #pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score[i], labels_per_im, device, close_obj[0][idx], duplicate)
                 pseudo_labels, loss_weights = self.distance_layer(proposals_per_image, source_score[i], labels_per_im, device, close_box[idx], duplicate)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
                 with torch.no_grad():
@@ -327,8 +335,6 @@ class RoILossComputation(object):
         ### triplet end ###
 
         assert len(final_score_list) != 0
-        #if iteration % 500 == 0:
-        #    import IPython; IPython.embed()
         for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
             return_loss_dict[l] /= len(final_score_list)
             return_acc_dict[a] /= len(final_score_list)
