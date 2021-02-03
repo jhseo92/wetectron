@@ -51,18 +51,28 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(1.0 / batch_size))
         return res
 
-def get_geometry(bbox, score, device):
+def get_geometry(bbox, score, device, p):
     centroids = torch.zeros((0,2), dtype=float, device=device)
-    for b in bbox:
+    box_info = torch.zeros((0,4), dtype=float, device=device)
+
+    for b in bbox.bbox:
         x_centre = (b[0] + b[2]) / 2
         y_centre = (b[1] + b[3]) / 2
+        w = (b[2] - b[0]) / bbox.size[0]
+        h = (b[3] - b[1]) / bbox.size[1]
+        box_size = (w*h) / (bbox.size[0] *bbox.size[1])
         centre = torch.tensor([x_centre, y_centre]).to(device).unsqueeze(0)
         centroids = torch.cat((centroids, centre))
-
-    centroids_trans = centroids - centroids[score.argmax()]
-    mean_vector = (centroids - centroids[score.argmax()]).mean(dim=0)
-    distances = torch.cdist(centroids, centroids[score.argmax()].unsqueeze(0), p=2).to(device)
-    return centroids, centroids_trans, mean_vector, distances
+        box_info = torch.cat((box_info, torch.tensor([w,h,w/h,box_size]).to(device).unsqueeze(0)))
+    ### normalize ###
+    centroids[:,0] = centroids[:,0]/bbox.size[0]
+    centroids[:,1] = centroids[:,1]/bbox.size[1]
+    ### normalize ###
+    centroids_trans = centroids - centroids[score[:, p].argmax()]
+    mean_vector = centroids - centroids[score[:, p].argmax()]
+    distances = torch.cdist(centroids, centroids[score[:, p].argmax()].unsqueeze(0), p=2).to(device)
+    #import IPython; IPython.embed()
+    return centroids, centroids_trans, mean_vector, distances, box_info
 
 @registry.ROI_WEAK_LOSS.register("WSDDNLoss")
 class WSDDNLossComputation(object):
@@ -91,6 +101,66 @@ class WSDDNLossComputation(object):
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
 
+        class_score_list = class_score.split([len(p) for p in proposals])
+        det_score_list = final_det_score.split([len(p) for p in proposals])
+
+        device = class_score.device
+        num_classes = class_score.shape[1]
+
+        final_score = class_score * final_det_score
+        final_score_list = final_score.split([len(p) for p in proposals])
+        total_loss = 0
+        accuracy_img = 0
+        for idx, (final_score_per_im, cls_score_per_im, det_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, class_score_list, det_score_list, targets, proposals)):
+            labels_per_im = targets_per_im.get_field('labels').unique()
+            labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
+            _labels = labels_per_im[1:]
+            positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device).add(1)
+
+            cls_feature = torch.zeros((len(proposals_per_image), 3*21), dtype=torch.float, device=device)
+            det_feature = torch.zeros((len(proposals_per_image), 0), dtype=torch.float, device=device)
+
+            # MIL loss
+            img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            ### img_geometry ###
+            for p in positive_classes:
+                _, _, mean_vector, distances, box_info = get_geometry(proposals_per_image, det_score_per_im, device, p)
+                # 2, 2, 1, 4
+                cls_feature[:,p*3:(p+1)*3] = torch.cat((mean_vector, distances), dim=1)
+                #cls_feature = torch.cat((cls_feature, mean_vector, distances), dim=1)
+            det_feature = torch.cat((det_feature, box_info), dim=1)
+
+            adj_iou = boxlist_iou(proposals_per_image, proposals_per_image)
+            cls_feature = torch.cat( (cls_feature, cls_score_per_im), dim=1).float()
+            det_feature = torch.cat( (det_feature, det_score_per_im), dim=1).float()
+
+            cls_net = GCNNet(1, 1, cls_feature.shape[-1], cls_feature.shape[-1], 1, cls_feature.shape[-1], cls_feature.shape[-1], cls_feature.shape[-1], 21, False, 'gsc').to('cuda')
+            det_net = GCNNet(1, 1, det_feature.shape[-1], det_feature.shape[-1], 1, det_feature.shape[-1], det_feature.shape[-1], det_feature.shape[-1], 21, False, 'gsc').to('cuda')
+            ### n_block, n_layer, in_dim, hidden_dim, n_atom, pred_dim1, pred_dim2, pred_dim3
+            cls_feature = cls_net(cls_feature, adj_iou)
+            det_feature = det_net(det_feature, adj_iou)
+            cls_score = F.softmax(cls_feature, dim=1)
+            det_score = F.softmax(det_feature, dim=0)
+
+            gcn_img_score_per_im = torch.clamp(torch.sum(cls_score * det_score, dim=0), min=epsilon, max=1-epsilon)
+
+            ### img_geometry ###
+            #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
+            #return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            total_loss += F.binary_cross_entropy(gcn_img_score_per_im, labels_per_im.clamp(0, 1))
+            accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
+
+        '''class_score = cat(class_score, dim=0)
+        class_score = F.softmax(class_score, dim=1)
+
+        det_score = cat(det_score, dim=0)
+        det_score_list = det_score.split([len(p) for p in proposals])
+        final_det_score = []
+        for det_score_per_image in det_score_list:
+            det_score_per_image = F.softmax(det_score_per_image, dim=0)
+            final_det_score.append(det_score_per_image)
+        final_det_score = cat(final_det_score, dim=0)
+
         device = class_score.device
         num_classes = class_score.shape[1]
 
@@ -107,7 +177,7 @@ class WSDDNLossComputation(object):
 
         total_loss = total_loss / len(final_score_list)
         accuracy_img = accuracy_img / len(final_score_list)
-
+'''
         return dict(loss_img=total_loss), dict(accuracy_img=accuracy_img)
 
 
@@ -170,25 +240,38 @@ class RoILossComputation(object):
             _labels = labels_per_im[1:]
             positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device).add(1)
 
+            cls_feature = torch.zeros((len(proposals_per_image), 3*21), dtype=torch.float, device=device)
+            det_feature = torch.zeros((len(proposals_per_image), 0), dtype=torch.float, device=device)
+
             # MIL loss
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             ### img_geometry ###
-            #for p in positive_classes:
-            #    gt_box = BoxList(targets_per_im.bbox[targets_per_im.get_field('labels') == p], proposals_per_image.size, mode=proposals_per_image.mode)
-            #    img_centroids, img_centroids_trans, img_mean_vector, img_distances = get_geometry(proposals_per_image, img_score_per_im, device)
-            #    import IPython; IPython.embed()
+            for p in positive_classes:
+                _, _, mean_vector, distances, box_info = get_geometry(proposals_per_image, det_score_per_im, device, p)
+                # 2, 2, 1, 4
+                cls_feature[:,p*3:(p+1)*3] = torch.cat((mean_vector, distances), dim=1)
+                #cls_feature = torch.cat((cls_feature, mean_vector, distances), dim=1)
+            det_feature = torch.cat((det_feature, box_info), dim=1)
+
             adj_iou = boxlist_iou(proposals_per_image, proposals_per_image)
-            node_feature = torch.zeros((len(proposals_per_image), 0), dtype=torch.float, device=device)
-            node_feature = torch.cat( (node_feature, cls_score_per_im), dim=1)
-            node_feature = torch.cat( (node_feature, det_score_per_im), dim=1)
-            #img_centroids, img_centroids_trans, img_mean_vector, img_distances = get_geometry(proposals_per_image, img_score_per_im,
-            net = GCNNet(3, 3, 42, len(proposals_per_image), 1, 4096, 4096, 4096, 21, False, 'gsc').to('cuda')
-            net(node_feature, adj_iou)
-            import IPython; IPython.embed()
+            cls_feature = torch.cat( (cls_feature, cls_score_per_im), dim=1).float()
+            det_feature = torch.cat( (det_feature, det_score_per_im), dim=1).float()
+
+            cls_net = GCNNet(1, 1, cls_feature.shape[-1], 4096, 1, 4096, 4096, 4096, 21, False, 'gsc').to('cuda')
+            det_net = GCNNet(1, 1, det_feature.shape[-1], 4096, 1, 4096, 4096, 4096, 21, False, 'gsc').to('cuda')
+            ### n_block, n_layer, in_dim, hidden_dim, n_atom, pred_dim1, pred_dim2, pred_dim3
+            cls_feature = cls_net(cls_feature, adj_iou)
+            det_feature = det_net(det_feature, adj_iou)
+            cls_score = F.softmax(cls_feature, dim=1)
+            det_score = F.softmax(det_feature, dim=0)
+
+            gcn_img_score_per_im = torch.clamp(torch.sum(cls_score * det_score, dim=0), min=epsilon, max=1-epsilon)
 
             ### img_geometry ###
             #img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            #return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+            return_loss_dict['loss_img'] += F.binary_cross_entropy(gcn_img_score_per_im, labels_per_im.clamp(0, 1))
+
             # Region loss
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)

@@ -98,7 +98,7 @@ class ReadOut(nn.Module):
 
     def forward(self, x):
         out = self.linear(x)
-        out = torch.sum(out, 1)
+        #out = torch.sum(out, 1)
         if self.activation != None:
             out = self.activation(out)
         return out
@@ -114,6 +114,7 @@ class Predictor(nn.Module):
         self.activation = act
 
     def forward(self, x):
+        #import IPython; IPython.embed()
         out = self.linear(x)
         if self.activation != None:
             out = self.activation(out)
@@ -135,17 +136,15 @@ class GCNNet(nn.Module):
         self.readout = ReadOut(hidden_dim, pred_dim1, act=nn.ReLU())
         self.pred1 = Predictor(pred_dim1, pred_dim2, act=nn.ReLU())
         self.pred2 = Predictor(pred_dim2, pred_dim3, act=nn.Tanh())
-        self.pred3 = Predictor(pred_dim3,
-                               out_dim)
+        self.pred3 = Predictor(pred_dim3, out_dim)
 
     def forward(self, x, adj):
         for i, block in enumerate(self.blocks):
             out, adj = block((x if i==0 else out), adj)
-        import IPython; IPython.embed()
+        #import IPython; IPython.embed()
         out = self.readout(out)
-        #import IPython; IPython.embed()
-        out = self.pred1(out)
-        #import IPython; IPython.embed()
-        out = self.pred2(out)
+
+        #out = self.pred1(out)
+        #out = self.pred2(out)
         out = self.pred3(out)
         return out
