@@ -262,14 +262,9 @@ class RoILossComputation(object):
         p = b2_adj_box
         a_feat = b1_triplet_feature[a].squeeze(1)
         p_feat = b2_triplet_feature[p].squeeze(1)
-        dist = torch.zeros(len(triplet_feature), dtype=torch.float, device=device)
-        try:
-            for i in range(len(a)):
-                dist += self.pair_dist(triplet_feature, a_feat[i].unsqueeze(0))
-                dist += self.pair_dist(triplet_feature, p_feat[i].unsqueeze(0))
-        except:
-            import IPython; IPython.embed()
-        dist = dist/(len(a)+len(p))
+
+        feature_cat = torch.cat((a_feat, p_feat))
+        dist = torch.cdist(triplet_feature, feature_cat, p=2).mean(dim=1)
 
         b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
         b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
@@ -314,9 +309,9 @@ class RoILossComputation(object):
             b2_pred = torch.cat((b2_pred, torch.all((proposals[1].bbox == b), dim=1).nonzero(as_tuple=False)))
         '''
         close_box = [b1_close, b2_close]
-        import IPython; IPython.embed()
+
         triplet_loss = self.triplet_loss(a_feat, p_feat, b1_n_feat) + self.triplet_loss(p_feat, a_feat, b2_n_feat)
-        return_loss_dict['loss_triplet'] = avg_score[:,1:].max().item() * triplet_loss
+        return_loss_dict['loss_triplet'] = avg_score[:,duplicate].max().item() * triplet_loss
 
         for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
