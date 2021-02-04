@@ -134,7 +134,9 @@ class RoILossComputation(object):
             return_loss_dict (dictionary): all the losses
             return_acc_dict (dictionary): all the accuracies of image-level classification
         """
+
         class_score = cat(class_score, dim=0)
+        class_logit_list = class_score.split([len(p) for p in proposals])
         class_score = F.softmax(class_score, dim=1)
 
         det_score = cat(det_score, dim=0)
@@ -159,10 +161,11 @@ class RoILossComputation(object):
             return_loss_dict['loss_ref%d'%i] = 0
             return_acc_dict['acc_ref%d'%i] = 0
 
-        for idx, (final_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, targets, proposals)):
+        for idx, (final_score_per_im, cls_logit_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, class_logit_list, targets, proposals)):
             labels_per_im = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
             # MIL loss
+            import IPython; IPython.embed()
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
             # Region loss

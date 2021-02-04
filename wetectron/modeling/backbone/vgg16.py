@@ -123,25 +123,6 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
         )
         self.out_channels = 4096
 
-        self.triplet = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, 2048),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(2048, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout()
-        )
-
-        '''self.triplet = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.PReLU(),
-            nn.Linear(4096, 128),
-            nn.PReLU()
-        )'''
-
         if init_weights:
             self._initialize_weights()
 
@@ -153,17 +134,14 @@ class VGG16FC67ROIFeatureExtractor(nn.Module):
 
     def forward(self, x, proposals):
         # also pool featurs of multiple images into one huge ROI tensor
-        #import IPython; IPython.embed()
+
         roi_feature_map = self.pooler(x, proposals)
-        #import IPython; IPython.embed()
+
         roi_flat = roi_feature_map.view(roi_feature_map.shape[0], -1)
-        #import IPython; IPython.embed()
+
         roi_fc = self.classifier(roi_flat)
-        #import IPython; IPython.embed()
-        #torch.cuda.empty_cache()
-        roi_triplet = self.triplet(roi_flat)
-        #import IPython; IPython.embed()
-        return roi_fc, roi_triplet
+
+        return roi_fc
 
     def forward_pooler(self, x, proposals):
         x = self.pooler(x, proposals)

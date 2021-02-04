@@ -47,7 +47,6 @@ class GeneralizedRCNN(nn.Module):
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
 
         """
-        #import IPython; IPython.embed()
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
         features = self.backbone(images.tensors)    #vgg16 images.tensors: [2,3,600,800]
@@ -59,7 +58,6 @@ class GeneralizedRCNN(nn.Module):
             proposals, proposal_losses = self.rpn(images, features, targets)
 
         if self.roi_heads:
-            #import IPython; IPython.embed()
             x, result, detector_losses, accuracy = self.roi_heads(features, proposals, targets, model_cdb)
         else:
             # RPN-only models don't have roi_heads
