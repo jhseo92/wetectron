@@ -153,7 +153,7 @@ class RoILossComputation(object):
         final_score = class_score * final_det_score
         final_score_list = final_score.split([len(p) for p in proposals])
         ref_scores = [rs.split([len(p) for p in proposals]) for rs in ref_scores]
-
+        import IPython; IPython.embed()
         return_loss_dict = dict(loss_img=0)
         return_acc_dict = dict(acc_img=0)
         num_refs = len(ref_scores)
