@@ -330,9 +330,12 @@ class RoILossComputation(object):
         ### triplet end ###
 
         assert len(final_score_list) != 0
-        for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
-            return_loss_dict[l] /= len(final_score_list)
-            return_acc_dict[a] /= len(final_score_list)
+        try:
+            for l, a in zip(return_loss_dict.keys(), return_acc_dict.keys()):
+                return_loss_dict[l] /= len(final_score_list)
+                return_acc_dict[a] /= len(final_score_list)
+        except:
+            import IPython; IPython.embed()
         return return_loss_dict, return_acc_dict
 
 
