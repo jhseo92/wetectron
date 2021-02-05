@@ -4,12 +4,15 @@
 # --------------------------------------------------------
 import torch
 from torch.nn import functional as F
+from torchvision import transforms, utils
+from matplotlib import pyplot as plt
 
 from wetectron.layers import smooth_l1_loss
 from wetectron.modeling import registry
 from wetectron.modeling.utils import cat
 from wetectron.config import cfg
 from wetectron.structures.boxlist_ops import boxlist_iou, boxlist_iou_async
+from wetectron.structures.bounding_box import BoxList, BatchBoxList
 from wetectron.modeling.matcher import Matcher
 
 from .pseudo_label_generator import oicr_layer, mist_layer
@@ -122,7 +125,7 @@ class RoILossComputation(object):
         else:
             raise ValueError('please use propoer ratio P.')
 
-    def __call__(self, class_score, det_score, ref_scores, proposals, targets, epsilon=1e-10):
+    def __call__(self, img, class_score, det_score, ref_scores, proposals, targets, epsilon=1e-10):
         """
         Arguments:
             class_score (list[Tensor])
@@ -138,6 +141,7 @@ class RoILossComputation(object):
         class_score = cat(class_score, dim=0)
         class_logit_list = class_score.split([len(p) for p in proposals])
         class_score = F.softmax(class_score, dim=1)
+        class_score_list = class_score.split([len(p) for p in proposals])
 
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
@@ -146,6 +150,7 @@ class RoILossComputation(object):
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
             final_det_score.append(det_score_per_image)
         final_det_score = cat(final_det_score, dim=0)
+        final_det_score_list = final_det_score.split([len(p) for p in proposals])
 
         device = class_score.device
         num_classes = class_score.shape[1]
@@ -153,21 +158,37 @@ class RoILossComputation(object):
         final_score = class_score * final_det_score
         final_score_list = final_score.split([len(p) for p in proposals])
         ref_scores = [rs.split([len(p) for p in proposals]) for rs in ref_scores]
-        import IPython; IPython.embed()
+
         return_loss_dict = dict(loss_img=0)
         return_acc_dict = dict(acc_img=0)
         num_refs = len(ref_scores)
+
         for i in range(num_refs):
             return_loss_dict['loss_ref%d'%i] = 0
             return_acc_dict['acc_ref%d'%i] = 0
 
-        for idx, (final_score_per_im, cls_logit_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, class_logit_list, targets, proposals)):
-            labels_per_im = targets_per_im.get_field('labels').unique()
-            labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
+        act_map = []
+        for idx, (final_score_per_im, cls_score_per_im, det_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(final_score_list, class_score_list, final_det_score_list, targets, proposals)):
+            im_labels = targets_per_im.get_field('labels').unique()
+            labels_per_im = generate_img_label(class_score.shape[1], im_labels, device)
             # MIL loss
-            import IPython; IPython.embed()
+
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
+
+            cls_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size)
+            det_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size)
+            final_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size)
+
+            for box, c, d, f in zip(proposals_per_image.bbox.round().type(torch.int), cls_score_per_im, det_score_per_im, final_score_per_im):
+                for i, (c_score, d_score, f_score) in enumerate(zip(c, d, f)):
+                    cls_map[i][box[0]:box[2]+1, box[1]:box[3]+1] += c_score.item()
+                    det_map[i][box[0]:box[2]+1, box[1]:box[3]+1] += d_score.item()
+                    final_map[i][box[0]:box[2]+1, box[1]:box[3]+1] += f_score.item()
+            act_map.append(final_map)
+            import IPython; IPython.embed()
+
+
             # Region loss
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
@@ -175,6 +196,10 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
 
+            '''for l in im_labels:
+                l = int(l.item())
+                import IPython; IPython.embed()
+            '''
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
                 for i in range(num_refs):

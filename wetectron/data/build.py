@@ -3,6 +3,7 @@ import bisect
 import copy
 import logging
 import numpy as np
+import itertools
 
 import torch.utils.data
 from wetectron.utils.comm import get_world_size
@@ -207,6 +208,34 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
             worker_init_fn=worker_init_reset_seed
         )
         data_loaders.append(data_loader)
+    '''co_mat = np.zeros([20,20])
+    if is_train:
+        for data in data_loaders[0]:
+            for d in data[1]:
+                im_labels = d.get_field('labels').unique().subtract(1).tolist()
+                for l in im_labels:
+                    co_mat[l,l] += 1
+
+                if len(im_labels) >= 2:
+                    comb = list(itertools.combinations(im_labels,2))
+                    for c in comb:
+                        co_mat[c[0], c[1]] += 1
+
+        import IPython; IPython.embed()
+    '''
+    '''for a in range(20):
+        for b in range(20):
+            co_mat[b,a] = co_mat[a,b]
+
+    for i in range(20):
+        co_mat2[i] = co_mat[i]/co_mat[i][i]
+
+    for x in range(20):
+        for y in range(20):
+            if co_mat2[x,y] == 0:
+                co_mat2[x,y] = 1e-9
+    co_occur = torch.Tensor(co_mat2).to('cuda')
+    '''
     if is_train:
         # during training, a single (possibly concatenated) data_loader is returned
         assert len(data_loaders) == 1

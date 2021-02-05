@@ -90,7 +90,6 @@ def do_train(
         images = images.to(device)
         targets = [target.to(device) for target in targets]
         rois = [r.to(device) if r is not None else None for r in rois]
-        #import IPython; IPython.embed()
         loss_dict, metrics = model(images, targets, rois) ## model : wetectron/modeling/detectro/g_rcnn
         losses = sum(loss for loss in loss_dict.values())
         # reduce losses over all GPUs for logging purposes
