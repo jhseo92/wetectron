@@ -35,7 +35,7 @@ try:
 except ImportError:
     raise ImportError('Use APEX for multi-precision via apex.amp')
 
-def train(cfg, local_rank, distributed, use_tensorboard=False):
+def train(cfg, local_rank, distributed, use_tensorboard=False, ckpt=None):
     model = build_detection_model(cfg)
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
@@ -62,7 +62,7 @@ def train(cfg, local_rank, distributed, use_tensorboard=False):
     checkpointer = DetectronCheckpointer(
         cfg, model, optimizer, scheduler, output_dir, save_to_disk
     )
-    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
+    extra_checkpoint_data = checkpointer.load(ckpt)
     arguments.update(extra_checkpoint_data)
 
     data_loader = make_data_loader(
@@ -222,6 +222,11 @@ def main():
         help="Use tensorboardX logger (Requires tensorboardX installed)",
         action="store_true",
     )
+    parser.add_argument(
+        "--ckpt",
+        help="The path to the checkpoint for test, default is the latest checkpoint.",
+        default=None,
+    )
 
     args = parser.parse_args()
 
@@ -277,7 +282,8 @@ def main():
             cfg=cfg,
             local_rank=args.local_rank,
             distributed=args.distributed,
-            use_tensorboard=args.use_tensorboard
+            use_tensorboard=args.use_tensorboard,
+            ckpt=args.ckpt
         )
 
     if not args.skip_test:

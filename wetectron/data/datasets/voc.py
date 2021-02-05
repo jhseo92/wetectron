@@ -107,8 +107,8 @@ class PascalVOCDataset(torch.utils.data.Dataset):
 
         if self.transforms is not None:
             img, target, rois = self.transforms(img, target, rois)
-
-        return img, target, rois, index
+        img_path = self._imgpath % img_id
+        return img, target, rois, img_path
 
     def __len__(self):
         return len(self.ids)

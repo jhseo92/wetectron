@@ -70,7 +70,7 @@ def do_train(
     start_training_time = time.time()
     end = time.time()
 
-    for iteration, (images, targets, rois, _) in enumerate(data_loader, start_iter):
+    for iteration, (images, targets, rois, path) in enumerate(data_loader, start_iter):
         if any(len(target) < 1 for target in targets):
             logger.error(f"Iteration={iteration + 1} || Image Ids used for training {_} || targets Length={[len(target) for target in targets]}" )
             continue
@@ -90,7 +90,7 @@ def do_train(
         images = images.to(device)
         targets = [target.to(device) for target in targets]
         rois = [r.to(device) if r is not None else None for r in rois]
-        loss_dict, metrics = model(images, targets, rois) ## model : wetectron/modeling/detectro/g_rcnn
+        loss_dict, metrics = model(images, targets, rois, path) ## model : wetectron/modeling/detectro/g_rcnn
         losses = sum(loss for loss in loss_dict.values())
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = reduce_loss_dict(loss_dict)
@@ -194,7 +194,7 @@ def do_train_cdb(
         targets = [target.to(device) for target in targets]
         rois = [r.to(device) if r is not None else None for r in rois]
 
-        loss_dict, metrics = model(images, targets, rois, model_cdb)
+        loss_dict, metrics = model(images, targets, rois, model_cdb, path)
         losses = sum(loss for loss in loss_dict.values())
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = reduce_loss_dict(loss_dict)

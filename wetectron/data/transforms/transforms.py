@@ -67,7 +67,7 @@ class Resize(object):
             target = target.resize(image.size)
         if rois is not None:
             rois = rois.resize(image.size)
-            
+
         return image, target, rois
 
 class RandomHorizontalFlip(object):
@@ -95,7 +95,7 @@ class RandomVerticalFlip(object):
                 target = target.transpose(1)
             if rois is not None:
                 rois = rois.transpose(1)
-                
+
         return image, target, rois
 
 class ColorJitter(object):
@@ -128,6 +128,7 @@ class Normalize(object):
     def __call__(self, image, target=None, rois=None):
         if self.to_bgr255:
             image = image[[2, 1, 0]] * 255
+
         image = F.normalize(image, mean=self.mean, std=self.std)
         return image, target, rois
 

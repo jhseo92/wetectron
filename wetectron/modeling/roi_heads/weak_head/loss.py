@@ -6,6 +6,12 @@ import torch
 from torch.nn import functional as F
 from torchvision import transforms, utils
 from matplotlib import pyplot as plt
+from PIL import Image
+import seaborn as sns
+import matplotlib.image as mpimg
+from matplotlib.colors import ListedColormap
+import numpy as np
+from wetectron.modeling.heatmap import heatmap
 
 from wetectron.layers import smooth_l1_loss
 from wetectron.modeling import registry
@@ -50,6 +56,10 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(1.0 / batch_size))
         return res
 
+def get_alpha_blend_cmap(cmap, alpha):
+    cls = plt.get_cmap(cmap)(np.linspace(0,1,256))
+    cls = (1-alpha) + alpha*cls
+    return ListedColormap(cls)
 
 @registry.ROI_WEAK_LOSS.register("WSDDNLoss")
 class WSDDNLossComputation(object):
@@ -111,7 +121,6 @@ class WSDDNLossComputation(object):
 
         return dict(loss_img=total_loss), dict(accuracy_img=accuracy_img)
 
-
 @registry.ROI_WEAK_LOSS.register("RoILoss")
 class RoILossComputation(object):
     """ Generic roi-level loss """
@@ -125,7 +134,7 @@ class RoILossComputation(object):
         else:
             raise ValueError('please use propoer ratio P.')
 
-    def __call__(self, img, class_score, det_score, ref_scores, proposals, targets, epsilon=1e-10):
+    def __call__(self, img, class_score, det_score, ref_scores, proposals, targets, path, epsilon=1e-10):
         """
         Arguments:
             class_score (list[Tensor])
@@ -176,16 +185,29 @@ class RoILossComputation(object):
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
 
-            cls_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size)
-            det_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size)
-            final_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size)
+            cls_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size[::-1],device=device)
+            det_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size[::-1],device=device)
+            final_map = torch.zeros((len(labels_per_im), ) + targets_per_im.size[::-1],device=device)
 
             for box, c, d, f in zip(proposals_per_image.bbox.round().type(torch.int), cls_score_per_im, det_score_per_im, final_score_per_im):
                 for i, (c_score, d_score, f_score) in enumerate(zip(c, d, f)):
-                    cls_map[i][box[0]:box[2]+1, box[1]:box[3]+1] += c_score.item()
-                    det_map[i][box[0]:box[2]+1, box[1]:box[3]+1] += d_score.item()
-                    final_map[i][box[0]:box[2]+1, box[1]:box[3]+1] += f_score.item()
+                    cls_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += c_score.item()
+                    det_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += d_score.item()
+                    final_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += f_score.item()
             act_map.append(final_map)
+            cls_map = (cls_map - cls_map.min().item()) / (cls_map.max().item() - cls_map.min().item())
+            #cls_map = cls_map.permute(0,2,1)
+            #det_map = det_map.permute(0,2,1)
+            #final_map = final_map.permute(0,2,1)
+            im = Image.open(('/').join(path[idx].split('/')[:-1]) + '/' + path[idx].split('/')[-1].zfill(10)).resize((targets_per_im.size[0], targets_per_im.size[1]))
+            fig = plt.figure()
+            class_list = ['bg','aero','bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'din', 'dog', 'horse', 'motor', 'person', 'plant', 'sheep', 'sofa', 'train', 'tv']
+            for i, (f, l) in enumerate(zip(final_map,labels_per_im)):
+                ax = fig.add_subplot(5, 5, i+1)
+                hmap = sns.heatmap(final_map[i,:,:].cpu().detach().numpy(), ax=ax, cmap='jet', xticklabels=False, yticklabels=class_list[i], vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+                hmap.imshow(im)
+            #fig.add_subplot(5,5, i+1)
+            #plt.imshow(im)
             import IPython; IPython.embed()
 
 
@@ -196,10 +218,6 @@ class RoILossComputation(object):
                 pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
 
-            '''for l in im_labels:
-                l = int(l.item())
-                import IPython; IPython.embed()
-            '''
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
                 for i in range(num_refs):

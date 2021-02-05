@@ -77,7 +77,7 @@ def im_detect_bbox_aug(model, images, device, rois=None):
 def im_detect_bbox(model, images, target_scale, target_max_size, device, rois=None):
     """
     Performs bbox detection on the original image.
-    """    
+    """
     transform = T.Compose([
         T.Resize(target_scale, target_max_size),
         T.ToTensor(),
@@ -85,10 +85,10 @@ def im_detect_bbox(model, images, target_scale, target_max_size, device, rois=No
             mean=cfg.INPUT.PIXEL_MEAN, std=cfg.INPUT.PIXEL_STD, to_bgr255=cfg.INPUT.TO_BGR255
         )
     ])
-    
+
     t_images = []
     t_rois = []
-    for image, roi in zip(images, rois):  
+    for image, roi in zip(images, rois):
         t_img, _, t_roi = transform(image, rois=roi)
         t_images.append(t_img)
         t_rois.append(t_roi)
@@ -101,7 +101,7 @@ def im_detect_bbox_hflip(model, images, target_scale, target_max_size, device, r
     """
     Performs bbox detection on the horizontally flipped image.
     Function signature is the same as for im_detect_bbox.
-    """    
+    """
     transform = T.Compose([
         T.Resize(target_scale, target_max_size),
         T.RandomHorizontalFlip(1.0),
@@ -113,8 +113,8 @@ def im_detect_bbox_hflip(model, images, target_scale, target_max_size, device, r
 
     t_images = []
     t_rois = []
-    
-    for image, roi in zip(images, rois):  
+
+    for image, roi in zip(images, rois):
         t_img, _, t_roi = transform(image, rois=roi)
         t_images.append(t_img)
         t_rois.append(t_roi)
