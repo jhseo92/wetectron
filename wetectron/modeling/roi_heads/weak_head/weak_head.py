@@ -49,6 +49,7 @@ class ROIWeakHead(torch.nn.Module):
         # feature_extractor generally corresponds to the pooler + heads
         #import IPython; IPython.embed()
         x = self.feature_extractor(features, proposals)
+        import IPython; IPython.embed()
         #import IPython; IPython.embed()
         # final classifier that converts the features into predictions
         cls_score, det_score, ref_scores = self.predictor(x, proposals)

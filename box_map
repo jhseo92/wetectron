@@ -1,0 +1,178 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 53,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import torch                                                                    \n",
+    "from torch.nn import functional as F                                            \n",
+    "from torchvision import transforms, utils                                       \n",
+    "from matplotlib import pyplot as plt                                            \n",
+    "from PIL import Image                                                           \n",
+    "import seaborn as sns                                                                                            \n",
+    "import numpy as np                                                                                               \n",
+    "\n",
+    "from PIL import ImageDraw\n",
+    "from wetectron.modeling.roi_heads import weak_head\n",
+    "from tools import train_net\n",
+    "from wetectron.config import cfg\n",
+    "from wetectron.data import make_data_loader\n",
+    "from wetectron.modeling.detector import build_detection_model\n",
+    "from wetectron.modeling.backbone import build_backbone\n",
+    "from wetectron.modeling.roi_heads.box_head.roi_box_feature_extractors import make_roi_box_feature_extractor\n",
+    "from wetectron.modeling.roi_heads.weak_head.roi_weak_predictors import make_roi_weak_predictor\n",
+    "from wetectron.modeling.utils import cat"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 54,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "When using more than one image per GPU you may encounter an out-of-memory (OOM) error if your GPU does not have sufficient memory. If this happens, you can reduce SOLVER.IMS_PER_BATCH (for training) or TEST.IMS_PER_BATCH (for inference). For training, you must also adjust the learning rate and schedule length according to the linear scaling rule. See for example: https://github.com/facebookresearch/Detectron/blob/master/configs/getting_started/tutorial_1gpu_e2e_faster_rcnn_R-50-FPN.yaml#L14\n",
+      "Dataset [ConcatDataset] has no categories attribute, labels.json file won't be created\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Loading proposals from: proposal/SS-voc_2007_train-boxes.pkl\n",
+      "Loading proposals from: proposal/SS-voc_2007_val-boxes.pkl\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "OICRPredictor(\n",
+       "  (avgpool): AdaptiveAvgPool2d(output_size=1)\n",
+       "  (cls_score): Linear(in_features=4096, out_features=21, bias=True)\n",
+       "  (det_score): Linear(in_features=4096, out_features=21, bias=True)\n",
+       "  (ref1): Linear(in_features=4096, out_features=21, bias=True)\n",
+       "  (ref2): Linear(in_features=4096, out_features=21, bias=True)\n",
+       "  (ref3): Linear(in_features=4096, out_features=21, bias=True)\n",
+       ")"
+      ]
+     },
+     "execution_count": 54,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "config_file = 'configs/voc/voc07_oicr_b2_i2.yaml'\n",
+    "opts = ['OUTPUT_DIR', '/home_rembrandt/jinhwan.seo/oicr_b2_i2']\n",
+    "ckpt = '/home/jhseo/wetectron/output/oicr_b2_i2/model_0055000.pth'\n",
+    "cfg.merge_from_file(config_file)\n",
+    "cfg.merge_from_list(opts)\n",
+    "local_rank = 0\n",
+    "distributed = False\n",
+    "arguments = {\"iteration\": 0}\n",
+    "data_loader = make_data_loader(\n",
+    "        cfg,\n",
+    "        is_train=True,\n",
+    "        is_distributed=distributed,\n",
+    "        start_iter=arguments[\"iteration\"],\n",
+    "    )\n",
+    "device = torch.device(cfg.MODEL.DEVICE)\n",
+    "model = build_detection_model(cfg)\n",
+    "model.to(device)\n",
+    "backbone = build_backbone(cfg)\n",
+    "backbone.to(device)\n",
+    "feature_extractor = make_roi_box_feature_extractor(cfg, in_channels=512)\n",
+    "feature_extractor.to(device)\n",
+    "predictor = make_roi_weak_predictor(cfg, feature_extractor.out_channels)\n",
+    "predictor.to(device)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 55,
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "RuntimeError",
+     "evalue": "CUDA out of memory. Tried to allocate 406.00 MiB (GPU 0; 11.91 GiB total capacity; 10.52 GiB already allocated; 370.94 MiB free; 10.91 GiB reserved in total by PyTorch)",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mRuntimeError\u001b[0m                              Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-55-0b0b4d01e105>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m      5\u001b[0m     \u001b[0mtargets\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mtarget\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mto\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdevice\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mtarget\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mtargets\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      6\u001b[0m     \u001b[0mfeatures\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mbackbone\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mimages\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mtensors\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mto\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdevice\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 7\u001b[0;31m     \u001b[0mx\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mfeature_extractor\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mfeatures\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mproposals\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m      8\u001b[0m     \u001b[0mclass_score\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdet_score\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mref_scores\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mpredictor\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mx\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mproposals\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      9\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/.miniconda3/envs/wetectron/lib/python3.7/site-packages/torch/nn/modules/module.py\u001b[0m in \u001b[0;36m_call_impl\u001b[0;34m(self, *input, **kwargs)\u001b[0m\n\u001b[1;32m    725\u001b[0m             \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_slow_forward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    726\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 727\u001b[0;31m             \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mforward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    728\u001b[0m         for hook in itertools.chain(\n\u001b[1;32m    729\u001b[0m                 \u001b[0m_global_forward_hooks\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mvalues\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/wetectron/wetectron/modeling/backbone/vgg16.py\u001b[0m in \u001b[0;36mforward\u001b[0;34m(self, x, proposals)\u001b[0m\n\u001b[1;32m    136\u001b[0m         \u001b[0;31m# also pool featurs of multiple images into one huge ROI tensor\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    137\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 138\u001b[0;31m         \u001b[0mroi_feature_map\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpooler\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mx\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mproposals\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    139\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    140\u001b[0m         \u001b[0mroi_flat\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mroi_feature_map\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mview\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mroi_feature_map\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mshape\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m-\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/.miniconda3/envs/wetectron/lib/python3.7/site-packages/torch/nn/modules/module.py\u001b[0m in \u001b[0;36m_call_impl\u001b[0;34m(self, *input, **kwargs)\u001b[0m\n\u001b[1;32m    725\u001b[0m             \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_slow_forward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    726\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 727\u001b[0;31m             \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mforward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    728\u001b[0m         for hook in itertools.chain(\n\u001b[1;32m    729\u001b[0m                 \u001b[0m_global_forward_hooks\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mvalues\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/wetectron/wetectron/modeling/poolers.py\u001b[0m in \u001b[0;36mforward\u001b[0;34m(self, x, boxes)\u001b[0m\n\u001b[1;32m    107\u001b[0m         \u001b[0mrois\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconvert_to_roi_format\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mboxes\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    108\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mnum_levels\u001b[0m \u001b[0;34m==\u001b[0m \u001b[0;36m1\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 109\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpoolers\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mx\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mrois\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    110\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    111\u001b[0m         \u001b[0mlevels\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmap_levels\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mboxes\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/.miniconda3/envs/wetectron/lib/python3.7/site-packages/torch/nn/modules/module.py\u001b[0m in \u001b[0;36m_call_impl\u001b[0;34m(self, *input, **kwargs)\u001b[0m\n\u001b[1;32m    725\u001b[0m             \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0m_slow_forward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    726\u001b[0m         \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 727\u001b[0;31m             \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mforward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    728\u001b[0m         for hook in itertools.chain(\n\u001b[1;32m    729\u001b[0m                 \u001b[0m_global_forward_hooks\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mvalues\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/.miniconda3/envs/wetectron/lib/python3.7/site-packages/apex/amp/amp.py\u001b[0m in \u001b[0;36mwrapper\u001b[0;34m(*args, **kwargs)\u001b[0m\n\u001b[1;32m     20\u001b[0m         \u001b[0mhandle\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0m_DECORATOR_HANDLE\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     21\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mhandle\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mNone\u001b[0m \u001b[0;32mor\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mhandle\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mis_active\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 22\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0morig_fn\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     23\u001b[0m         inner_cast_fn = utils.verbosify(cast_fn, orig_fn.__name__,\n\u001b[1;32m     24\u001b[0m                                   handle.verbose)\n",
+      "\u001b[0;32m~/wetectron/wetectron/layers/roi_pool.py\u001b[0m in \u001b[0;36mforward\u001b[0;34m(self, input, rois)\u001b[0m\n\u001b[1;32m     55\u001b[0m     \u001b[0;34m@\u001b[0m\u001b[0mamp\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfloat_function\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     56\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mforward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mrois\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 57\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mroi_pool\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mrois\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0moutput_size\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mspatial_scale\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     58\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     59\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0m__repr__\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/wetectron/wetectron/layers/roi_pool.py\u001b[0m in \u001b[0;36mforward\u001b[0;34m(ctx, input, roi, output_size, spatial_scale)\u001b[0m\n\u001b[1;32m     16\u001b[0m         \u001b[0mctx\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0minput_shape\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0minput\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msize\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     17\u001b[0m         output, argmax = _C.roi_pool_forward(\n\u001b[0;32m---> 18\u001b[0;31m             \u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mroi\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mspatial_scale\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0moutput_size\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0moutput_size\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     19\u001b[0m         )\n\u001b[1;32m     20\u001b[0m         \u001b[0mctx\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msave_for_backward\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0minput\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mroi\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0margmax\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;31mRuntimeError\u001b[0m: CUDA out of memory. Tried to allocate 406.00 MiB (GPU 0; 11.91 GiB total capacity; 10.52 GiB already allocated; 370.94 MiB free; 10.91 GiB reserved in total by PyTorch)"
+     ]
+    }
+   ],
+   "source": [
+    "for images, targets, rois, path in data_loader:\n",
+    "    rois = [r.to(device) if r is not None else None for r in rois]\n",
+    "    proposals = rois\n",
+    "    images.to(device)\n",
+    "    targets = [target.to(device) for target in targets]\n",
+    "    features = backbone(images.tensors.to(device))\n",
+    "    x = feature_extractor(features, proposals)\n",
+    "    class_score, det_score, ref_scores = predictor(x, proposals)\n",
+    "    \n",
+    "    class_score = cat(class_score, dim=0)                                                                                                                                                          \n",
+    "    class_score = F.softmax(class_score, dim=1)                             \n",
+    "    class_score_list = class_score.split([len(p) for p in proposals])                                                                              \n",
+    "    det_score = cat(det_score, dim=0)                                       \n",
+    "    det_score_list = det_score.split([len(p) for p in proposals])           \n",
+    "    final_det_score = []                                                    \n",
+    "    for det_score_per_image in det_score_list:                              \n",
+    "        det_score_per_image = F.softmax(det_score_per_image, dim=0)         \n",
+    "        final_det_score.append(det_score_per_image)                         \n",
+    "        final_det_score = cat(final_det_score, dim=0)                           \n",
+    "        final_det_score_list = final_det_score.split([len(p) for p in proposals])\n",
+    "        \n",
+    "    device = class_score.device                                             \n",
+    "    num_classes = class_score.shape[1]                                                                                                             \n",
+    "    final_score = class_score * final_det_score                             \n",
+    "    final_score_list = final_score.split([len(p) for p in proposals])       \n",
+    "    ref_scores = [rs.split([len(p) for p in proposals]) for rs in ref_scores]\n",
+    "    import IPython; IPython.embed()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.9"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}

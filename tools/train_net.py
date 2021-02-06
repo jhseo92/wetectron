@@ -36,6 +36,7 @@ except ImportError:
     raise ImportError('Use APEX for multi-precision via apex.amp')
 
 def train(cfg, local_rank, distributed, use_tensorboard=False, ckpt=None):
+
     model = build_detection_model(cfg)
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
