@@ -243,8 +243,7 @@ class RoILossComputation(object):
                     cls_prob = _prob[:,c]
                     if c.add(1).item() == duplicate:
                         max_ind = torch.argmax(cls_prob).unsqueeze(0)
-                    elif c.add(1).item() != duplicate:
-                        n_max_ind = torch.argmax(cls_prob).unsqueeze(0)
+                        n_max_ind = torch.argmin(cls_prob).unsqueeze(0)
                 if idx == 0:
                     b1_adj_box = torch.cat((b1_adj_box, max_ind))
                     b1_n_boxes = torch.cat((b1_n_boxes, n_max_ind))
@@ -264,25 +263,39 @@ class RoILossComputation(object):
         p_feat = b2_triplet_feature[p].squeeze(1)
 
         feature_cat = torch.cat((a_feat, p_feat))
-        dist = torch.cdist(triplet_feature, feature_cat, p=2).mean(dim=1)
+        #dist = torch.cdist(triplet_feature, feature_cat, p=2).mean(dim=1)
+        #b1_dist = torch.cdist(b1_triplet_feature, p_feat)
+        #b2_dist = torch.cdist(b2_triplet_feature, a_feat)
 
-        b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
-        b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
+        b1_dist = torch.zeros((0), dtype=torch.int, device=device)
+        b2_dist = torch.zeros((0), dtype=torch.int, device=device)
+        #sim_dist = torch.zeros((0), dtype=torch.int, device=device)
+        sim_dist = 0
+        for t in b1_triplet_feature:
+            b1_similarity = self.cos_dist(t.unsqueeze(0), p_feat).mean().unsqueeze(0)
+            b1_dist = torch.cat((b1_dist, b1_similarity))
+
+        for t in b2_triplet_feature:
+            b2_similarity = self.cos_dist(t.unsqueeze(0), a_feat).mean().unsqueeze(0)
+            b2_dist = torch.cat((b2_dist, b2_similarity))
+
+        for i in range(len(a_feat)):
+            sim_dist += self.cos_dist(a_feat[i].unsqueeze(0), p_feat).mean().item()
+        sim_dist = sim_dist/len(a_feat)
+
+        b1_close = (b1_dist > sim_dist).nonzero(as_tuple=False)
+        b2_close = (b2_dist > sim_dist).nonzero(as_tuple=False)
+
+        #b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
+        #b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
         #b1_close = (dist[:box_per_batch] <= dist[a].mean()).nonzero(as_tuple=False).cpu()
         #b2_close = (dist[box_per_batch:] <= dist[p].mean()).nonzero(as_tuple=False).cpu()
 
-        if len(b1_n_boxes) == 0:
-            b1_n_boxes = torch.cat((b1_n_boxes, b1_avg_score[:,0].topk(len(a))[1].unsqueeze(1)))
-        if len(b2_n_boxes) == 0:
-            b2_n_boxes = torch.cat((b2_n_boxes, b2_avg_score[:,0].topk(len(p))[1].unsqueeze(1)))
-        b1_n_boxes, b2_n_boxes = resize_dim(b1_n_boxes.tolist(), b2_n_boxes.tolist())
-        a, b1_n_boxes = resize_dim(a.tolist(), b1_n_boxes)
-        p, b2_n_boxes = resize_dim(p.tolist(), b2_n_boxes)
 
-        a_feat = b1_triplet_feature[torch.tensor(a)].squeeze(1)
-        p_feat = b2_triplet_feature[torch.tensor(p)].squeeze(1)
-        b1_n_feat = b1_triplet_feature[torch.tensor(b1_n_boxes)].squeeze(1)
-        b2_n_feat = b2_triplet_feature[torch.tensor(b2_n_boxes)].squeeze(1)
+        a_feat = b1_triplet_feature[a].squeeze(1)
+        p_feat = b2_triplet_feature[p].squeeze(1)
+        b1_n_feat = b1_triplet_feature[b1_n_boxes].squeeze(1)
+        b2_n_feat = b2_triplet_feature[b2_n_boxes].squeeze(1)
 
         '''if len(b1_close) == 0:
             b1_close = a

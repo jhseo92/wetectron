@@ -135,6 +135,7 @@ class oicr_layer(object):
             # loss_weights[ignore_inds] = 0
 
             #max_indexes = (pseudo_labels == duplicate).nonzero(as_tuple=False)
+            import IPython; IPython.embed()
             for i, n in enumerate((positive_classes + 1)):
                 if n == duplicate:
                     max_indexes = torch.cat((max_indexes, (pseudo_labels == n).nonzero(as_tuple=False)))
