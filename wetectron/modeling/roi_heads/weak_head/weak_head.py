@@ -47,14 +47,11 @@ class ROIWeakHead(torch.nn.Module):
         """
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
-        #import IPython; IPython.embed()
         x = self.feature_extractor(features, proposals)
-        import IPython; IPython.embed()
-        #import IPython; IPython.embed()
+
         # final classifier that converts the features into predictions
         cls_score, det_score, ref_scores = self.predictor(x, proposals)
                                                 ##roi_weak_predictors
-        #import IPython; IPython.embed()
         if not self.training:
             if ref_scores == None:
                 final_score = cls_score * det_score

@@ -72,6 +72,7 @@ def strip_prefix_if_present(state_dict, prefix):
 
 
 def load_state_dict(model, loaded_state_dict):
+
     model_state_dict = model.state_dict()
     # if the state_dict comes from a model that was wrapped in a
     # DataParallel or DistributedDataParallel during serialization,

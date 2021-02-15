@@ -72,9 +72,11 @@ class Checkpointer(object):
             # no checkpoint could be found
             self.logger.info("No checkpoint found. Initializing model from scratch")
             return {}
+
         self.logger.info("Loading checkpoint from {}".format(f))
         checkpoint = self._load_file(f)
         self._load_model(checkpoint)
+
         if model_only:
             return checkpoint
         if "optimizer" in checkpoint and self.optimizer:

@@ -57,10 +57,53 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(1.0 / batch_size))
         return res
 
-def get_alpha_blend_cmap(cmap, alpha):
-    cls = plt.get_cmap(cmap)(np.linspace(0,1,256))
-    cls = (1-alpha) + alpha*cls
-    return ListedColormap(cls)
+def denormalize_img(img, device):
+    mean = [102.9801, 115.9465, 122.7717]
+    std = [1., 1., 1.]
+    z = img * torch.tensor(std).to(device).view(3, 1, 1)
+    z = z + torch.tensor(mean).to(device).view(3, 1, 1)
+
+    return z
+
+def create_im(img, targets_per_im, positive_classes, proposals_per_image, device):
+
+    #im = Image.open(('/').join(path[idx].split('/')[:-1]) + '/' + path[idx].split('/')[-1].zfill(10)).resize((targets_per_im.size[0], targets_per_im.size[1]))
+    im = denormalize_img(img, device)
+    im = im.cpu().detach().numpy().copy()
+    im = im.transpose(1,2,0)[:,:,::-1]
+    im_list = []
+
+    im = Image.fromarray(np.uint8(im))
+    draw = ImageDraw.Draw(im)
+
+    for gt_box in targets_per_im.bbox:
+        draw.rectangle( ( (gt_box[0].item(), gt_box[1].item()), (gt_box[2].item(), gt_box[3].item()) ), outline=(0,255,0), width=5)
+    #for p in positive_classes.add(1):
+    #    max_box = proposals_per_image.bbox[final_score_per_im[:,p].argmax()]
+    #    draw.rectangle( ( (max_box[0].item(), max_box[1].item()),(max_box[2].item(), max_box[3].item()) ), outline=(0,0,255), width=5)
+
+    #class_list = ['bg','aero','bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'din', 'dog', 'horse', 'motor', 'person', 'plant', 'sheep', 'sofa', 'train', 'tv']
+    return im
+
+def create_map(positive_classes, proposals_per_image, cls_score_per_im, det_score_per_im, final_score_per_im, source_scores, device):
+    cls_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1],device=device)
+    det_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1],device=device)
+    final_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1],device=device)
+    ref1_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1], device=device)
+    ref2_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1], device=device)
+    ref3_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1], device=device)
+
+    for i, p in enumerate(positive_classes.add(1)):
+        for box, c, d, f, r1, r2, r3 in zip(proposals_per_image.bbox.round().type(torch.int), cls_score_per_im[:,p], det_score_per_im[:,p], final_score_per_im[:,p], source_scores[0][:,p], source_scores[1][:,p], source_scores[2][:,p]):
+            cls_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += c.item()
+            det_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += d.item()
+            final_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += f.item()
+            ref1_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += r1.item()
+            ref2_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += r2.item()
+            ref3_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += r3.item()
+    #act_map.append(cls_map,det_map,final_map)
+    cls_map = (cls_map - cls_map.min().item()) / (cls_map.max().item() - cls_map.min().item())
+    return cls_map, det_map, final_map, ref1_map, ref2_map, ref3_map
 
 @registry.ROI_WEAK_LOSS.register("WSDDNLoss")
 class WSDDNLossComputation(object):
@@ -110,13 +153,9 @@ class WSDDNLossComputation(object):
             labels_per_im = generate_img_label(class_score.shape[1], labels_per_im, device)
 
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-            #sig_img_score_per_im = torch.clamp(torch.sum(sig_final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
-
             total_loss += F.binary_cross_entropy(img_score_per_im, labels_per_im)
-            #total_loss += F.binary_cross_entropy(sig_img_score_per_im, labels_per_im)
-            #import IPython; IPython.embed()
             accuracy_img += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
-            #accuracy_img += compute_avg_img_accuracy(labels_per_im, sig_img_score_per_im, num_classes)
+
         total_loss = total_loss / len(final_score_list)
         accuracy_img = accuracy_img / len(final_score_list)
 
@@ -155,6 +194,7 @@ class RoILossComputation(object):
 
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
+        #import IPython; IPython.embed()
         final_det_score = []
         for det_score_per_image in det_score_list:
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
@@ -178,68 +218,55 @@ class RoILossComputation(object):
             return_acc_dict['acc_ref%d'%i] = 0
 
         act_map = []
-        for idx, (img, final_score_per_im, cls_score_per_im, det_score_per_im, targets_per_im, proposals_per_image) in enumerate(zip(img.tensors, final_score_list, class_score_list, final_det_score_list, targets, proposals)):
+        for idx, (img, final_score_per_im, cls_score_per_im, det_score_per_im, det_sig_per_im, targets_per_im, proposals_per_image) in enumerate(zip(img.tensors, final_score_list, class_score_list, final_det_score_list, det_score_list,targets, proposals)):
             im_labels = targets_per_im.get_field('labels').unique()
             labels_per_im = generate_img_label(class_score.shape[1], im_labels, device)
             # MIL loss
-
+            source_scores = []
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
-
+            update_score = cls_score_per_im * torch.sigmoid(det_sig_per_im)
+            import IPython; IPython.embed()
             _labels = labels_per_im[1:]
             positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
-            cls_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1],device=device)
-            det_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1],device=device)
-            final_map = torch.zeros((len(positive_classes), ) + proposals_per_image.size[::-1],device=device)
-
-            for i, p in enumerate(positive_classes.add(1)):
-                for box, c, d, f in zip(proposals_per_image.bbox.round().type(torch.int), cls_score_per_im[:,p], det_score_per_im[:,p], final_score_per_im[:,p]):
-                    cls_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += c.item()
-                    det_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += d.item()
-                    final_map[i][box[1]:box[3]+1, box[0]:box[2]+1] += f.item()
-            act_map.append(final_map)
-            cls_map = (cls_map - cls_map.min().item()) / (cls_map.max().item() - cls_map.min().item())
-            #import IPython; IPython.embed()
-            #import IPython; IPython.embed()
-            #cls_map = cls_map.permute(0,2,1)
-            #det_map = det_map.permute(0,2,1)
-            #final_map = final_map.permute(0,2,1)
-            im = Image.open(('/').join(path[idx].split('/')[:-1]) + '/' + path[idx].split('/')[-1].zfill(10)).resize((targets_per_im.size[0], targets_per_im.size[1]))
-            #im = img.cpu().detach().numpy().copy()
-            #im = im.resize((proposals_per_image.size[0], proposals_per_image.size[1]), refcheck=False)
-            #im = Image.fromarray(im)
-            draw = ImageDraw.Draw(im)
-            import IPython; IPython.embed()
-            for gt_box in targets_per_im.bbox:
-                draw.rectangle( ( (gt_box[0].item(), gt_box[1].item()), (gt_box[2].item(), gt_box[3].item()) ), outline=(0,255,0), width=5)
-            fig = plt.figure()
-            for p in positive_classes.add(1):
-                max_box = proposals_per_image.bbox[final_score_per_im[:,p].argmax()]
-                draw.rectangle( ( (max_box[0].item(), max_box[1].item()),(max_box[2].item(), max_box[3].item()) ), outline=(0,0,255), width=5)
-
-            #class_list = ['bg','aero','bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'din', 'dog', 'horse', 'motor', 'person', 'plant', 'sheep', 'sofa', 'train', 'tv']
-            for i, (f, l) in enumerate(zip(final_map,labels_per_im)):
-                ax_c = fig.add_subplot(len(positive_classes), 3, (i*3) + 1)
-                hmap_c = sns.heatmap(cls_map[i,:,:].cpu().detach().numpy(), ax=ax_c, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
-                ax_d = fig.add_subplot(len(positive_classes), 3, (i*3) + 2)
-                hmap_d = sns.heatmap(det_map[i,:,:].cpu().detach().numpy(), ax=ax_d, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
-                ax_f = fig.add_subplot(len(positive_classes), 3, (i*3) + 3)
-                hmap_f = sns.heatmap(final_map[i,:,:].cpu().detach().numpy(), ax=ax_f, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
-                hmap_c.imshow(im)
-                hmap_d.imshow(im)
-                hmap_f.imshow(im)
-            #fig.add_subplot(5,5, i+1)
-            #plt.imshow(im)
-            import IPython; IPython.embed()
-
 
             # Region loss
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
+                source_scores.append(source_score)
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
 
+            ### visualization ###
+            fig = plt.figure()
+            im = create_im(img, targets_per_im, positive_classes, proposals_per_image, device)
+            cls_map, det_map, final_map, ref1_map, ref2_map, ref3_map = create_map(positive_classes, proposals_per_image, cls_score_per_im, det_score_per_im, final_score_per_im, source_scores, device)
+
+            for i in range(len(positive_classes)):
+                ax_c = fig.add_subplot(len(positive_classes), 7, (i*7) + 1)
+                sns.heatmap(cls_map[i,:,:].cpu().detach().numpy(), ax=ax_c, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+
+                ax_d = fig.add_subplot(len(positive_classes), 7, (i*7) + 2)
+                sns.heatmap(det_map[i,:,:].cpu().detach().numpy(), ax=ax_d, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+
+                ax_f = fig.add_subplot(len(positive_classes), 7, (i*7) + 3)
+                sns.heatmap(final_map[i,:,:].cpu().detach().numpy(), ax=ax_f, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+
+                ax_r1 = fig.add_subplot(len(positive_classes), 7, (i*7) + 4)
+                sns.heatmap(ref1_map[i,:,:].cpu().detach().numpy(), ax=ax_r1, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+
+                ax_r2 = fig.add_subplot(len(positive_classes), 7, (i*7) + 5)
+                sns.heatmap(ref1_map[i,:,:].cpu().detach().numpy(), ax=ax_r2, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+
+                ax_r3 = fig.add_subplot(len(positive_classes), 7, (i*7) + 6)
+                sns.heatmap(ref1_map[i,:,:].cpu().detach().numpy(), ax=ax_r3, cmap='jet', xticklabels=False, yticklabels=False, vmin=0.0, vmax=1.0, cbar=False, square=True , alpha=0.03)
+
+                fig.add_subplot(len(positive_classes), 7, (i*7) +7)
+                plt.imshow(im)
+            import IPython; IPython.embed()
+
+            ### visualization ###
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
                 for i in range(num_refs):
