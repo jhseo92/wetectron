@@ -262,40 +262,49 @@ class RoILossComputation(object):
         a_feat = b1_triplet_feature[a].squeeze(1)
         p_feat = b2_triplet_feature[p].squeeze(1)
 
-        feature_cat = torch.cat((a_feat, p_feat))
-        #dist = torch.cdist(triplet_feature, feature_cat, p=2).mean(dim=1)
-        #b1_dist = torch.cdist(b1_triplet_feature, p_feat)
-        #b2_dist = torch.cdist(b2_triplet_feature, a_feat)
+        b1_l2_dist = torch.cdist(b1_triplet_feature, p_feat, p=2).mean(dim=1)
+        b2_l2_dist = torch.cdist(b2_triplet_feature, a_feat, p=2).mean(dim=1)
 
+        ap_dist = torch.cdist(a_feat[0].unsqueeze(0) , p_feat[0].unsqueeze(0), p=2)
+        x = torch.cdist(b1_triplet_feature, p_feat[0].unsqueeze(0), p=2)
+        y = torch.cdist(b2_triplet_feature, a_feat[0].unsqueeze(0), p=2)
+        b1_d_close = (x < ap_dist).nonzero()
+        b2_d_close = (y < ap_dist).nonzero()
+
+        sim_l2_dist = torch.cdist(a_feat, p_feat).mean()
+        b1_l2_close = (b1_l2_dist < sim_l2_dist).nonzero()
+        b2_l2_close = (b2_l2_dist < sim_l2_dist).nonzero()
         b1_dist = torch.zeros((0), dtype=torch.int, device=device)
         b2_dist = torch.zeros((0), dtype=torch.int, device=device)
-        #sim_dist = torch.zeros((0), dtype=torch.int, device=device)
+
         sim_dist = 0
         for t in b1_triplet_feature:
-            b1_similarity = self.cos_dist(t.unsqueeze(0), p_feat).mean().unsqueeze(0)
+            b1_similarity = self.cos_dist(t.unsqueeze(0), p_feat[0].unsqueeze(0)).mean().unsqueeze(0)
             b1_dist = torch.cat((b1_dist, b1_similarity))
 
         for t in b2_triplet_feature:
-            b2_similarity = self.cos_dist(t.unsqueeze(0), a_feat).mean().unsqueeze(0)
+            b2_similarity = self.cos_dist(t.unsqueeze(0), a_feat[0].unsqueeze(0)).mean().unsqueeze(0)
             b2_dist = torch.cat((b2_dist, b2_similarity))
 
         for i in range(len(a_feat)):
             sim_dist += self.cos_dist(a_feat[i].unsqueeze(0), p_feat).mean().item()
-        sim_dist = sim_dist/len(a_feat)
+        sim_dist = self.cos_dist(a_feat[0].unsqueeze(0), p_feat[0].unsqueeze(0))
+        #sim_dist = sim_dist/len(a_feat)
 
         b1_close = (b1_dist > sim_dist).nonzero(as_tuple=False)
         b2_close = (b2_dist > sim_dist).nonzero(as_tuple=False)
 
+        #import IPython; IPython.embed()
         #b1_close = (dist[:box_per_batch] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
         #b2_close = (dist[box_per_batch:] <= (dist[a].mean() + dist[box_per_batch + p].mean())/2).nonzero(as_tuple=False)
         #b1_close = (dist[:box_per_batch] <= dist[a].mean()).nonzero(as_tuple=False).cpu()
         #b2_close = (dist[box_per_batch:] <= dist[p].mean()).nonzero(as_tuple=False).cpu()
 
 
-        a_feat = b1_triplet_feature[a].squeeze(1)
-        p_feat = b2_triplet_feature[p].squeeze(1)
-        b1_n_feat = b1_triplet_feature[b1_n_boxes].squeeze(1)
-        b2_n_feat = b2_triplet_feature[b2_n_boxes].squeeze(1)
+        a_feat = b1_triplet_feature[a[0]]#.squeeze(1)
+        p_feat = b2_triplet_feature[p[0]]#.squeeze(1)
+        b1_n_feat = b1_triplet_feature[b1_n_boxes[0]]#.squeeze(1)
+        b2_n_feat = b2_triplet_feature[b2_n_boxes[0]]#.squeeze(1)
 
         '''if len(b1_close) == 0:
             b1_close = a
