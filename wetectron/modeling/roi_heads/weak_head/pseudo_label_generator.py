@@ -84,6 +84,10 @@ class mist_layer(object):
 
 class oicr_layer(object):
     """ OICR. Tang et al. 2017 (https://arxiv.org/abs/1704.00138) """
+    def __init__(self):
+        bbox_reg_weights = cfg.MODEL.ROI_HEADS.BBOX_REG_WEIGHTS
+        self.box_coder = BoxCoder(weights=bbox_reg_weights)
+
     @torch.no_grad()
     def __call__(self, proposals, source_score, labels, device, return_targets=False):
         gt_boxes = torch.zeros((0, 4), dtype=torch.float, device=device)
@@ -103,19 +107,18 @@ class oicr_layer(object):
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)
             _prob[max_index].fill_(0)
-        import IPython; IPython.embed()
-        if return_targets == True:
-            gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
-            gt_boxes.add_field('labels',  gt_classes[:, 0].float())
-            # gt_boxes.add_field('difficult', bb)
-            return gt_boxes
+
+        #if return_targets == True:
+        #    gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
+        #    gt_boxes.add_field('labels',  gt_classes[:, 0].float())
+        #    # gt_boxes.add_field('difficult', bb)
+        #    return gt_boxes
 
         if gt_boxes.shape[0]  == 0:
             num_rois = len(source_score)
             pseudo_labels = torch.zeros(num_rois, dtype=torch.long, device=device)
             loss_weights = torch.zeros(num_rois, dtype=torch.float, device=device)
         else:
-            import IPython; IPython.embed()
             gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
             overlaps = boxlist_iou(proposals, gt_boxes)
             max_overlaps, gt_assignment = overlaps.max(dim=1)
@@ -125,6 +128,13 @@ class oicr_layer(object):
             # Select background RoIs as those with <= FG_IOU_THRESHOLD
             bg_inds = max_overlaps.le(cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD).nonzero(as_tuple=False)[:,0]
             pseudo_labels[bg_inds] = 0
+
+            if return_targets == True:
+                    matched_targets = gt_boxes[gt_assignment]
+                    regression_targets = self.box_coder.encode(
+                        matched_targets.bbox, proposals.bbox
+                    )
+                    return pseudo_labels, loss_weights, regression_targets
 
             # PCL_TRICK:
             # ignore_thres = 0.1

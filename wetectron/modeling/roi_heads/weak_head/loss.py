@@ -194,7 +194,7 @@ class RoILossComputation(object):
 
         det_score = cat(det_score, dim=0)
         det_score_list = det_score.split([len(p) for p in proposals])
-        #import IPython; IPython.embed()
+
         final_det_score = []
         for det_score_per_image in det_score_list:
             det_score_per_image = F.softmax(det_score_per_image, dim=0)
@@ -225,8 +225,7 @@ class RoILossComputation(object):
             source_scores = []
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
-            update_score = cls_score_per_im * torch.sigmoid(det_sig_per_im)
-            #import IPython; IPython.embed()
+
             _labels = labels_per_im[1:]
             positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
 
@@ -236,6 +235,7 @@ class RoILossComputation(object):
                 source_scores.append(source_score)
                 lmda = 3 if i == 0 else 1
                 pseudo_labels, loss_weights = self.roi_layer(proposals_per_image, source_score, labels_per_im, device)
+
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
 
             ### visualization ###
@@ -373,6 +373,7 @@ class RoIRegLossComputation(object):
                 pseudo_labels, loss_weights, regression_targets = self.roi_layer(
                     proposals_per_image, source_score, labels_per_im, device, return_targets=True
                 )
+
                 if self.roi_refine:
                     pseudo_labels = self.filter_pseudo_labels(pseudo_labels, proposals_per_image, targets_per_im)
 
