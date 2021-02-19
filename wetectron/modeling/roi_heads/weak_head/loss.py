@@ -330,7 +330,7 @@ class RoIRegLossComputation(object):
         return pseudo_labels
 
     def __call__(self, img, class_score, det_score, ref_scores, ref_bbox_preds, proposals, targets, epsilon=1e-10):
-
+        import IPython; IPython.embed()
         class_score = cat(class_score, dim=0)
         class_score = F.softmax(class_score, dim=1)
 

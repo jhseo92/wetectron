@@ -21,7 +21,7 @@ class GroupedBatchSampler(BatchSampler):
 
     """
 
-    def __init__(self, sampler, group_ids, batch_size, drop_uneven=False):
+    def __init__(self, sampler, group_ids, batch_size, dataset, args_t, args_v, drop_uneven=False):
         if not isinstance(sampler, Sampler):
             raise ValueError(
                 "sampler should be an instance of "
@@ -41,6 +41,10 @@ class GroupedBatchSampler(BatchSampler):
         self.groups = torch.unique(self.group_ids).sort(0)[0]
         #import IPython; IPython.embed()
         self._can_reuse_batches = False
+
+        self.voc_train = PascalVOCDataset(**args_t)
+        self.voc_val = PascalVOCDataset(**args_v)
+        self.dataset = dataset
 
     def _prepare_batches(self):
         dataset_size = len(self.group_ids)
@@ -96,13 +100,18 @@ class GroupedBatchSampler(BatchSampler):
         # finally, permute the batches
         batches = [merged[i].tolist() for i in permutation_order]
 
+        img_labels = [0] * len(sampled_ids)
+
+        for i in sampled_ids:
+            img_labels[i] = self.get_img_labels(i).tolist()
+        import IPython; IPython.embed()
         if self.drop_uneven:
             kept = []
             for batch in batches:
                 if len(batch) == self.batch_size:
                     kept.append(batch)
             batches = kept
-        #import IPython; IPython.embed()
+        import IPython; IPython.embed()
         return batches
 
     def __iter__(self):
@@ -119,3 +128,12 @@ class GroupedBatchSampler(BatchSampler):
             self._batches = self._prepare_batches()
             self._can_reuse_batches = True
         return len(self._batches)
+
+    def get_img_labels(self, index):
+        if self.dataset.get_idxs(index)[0] == 0:
+            img_labels = self.voc_train.get_groundtruth(
+                self.dataset.get_idxs(index)[1]).get_field('labels')
+        else :
+            img_labels = self.voc_val.get_groundtruth(
+                self.dataset.get_idxs(index)[1]).get_field('labels')
+        return img_labels

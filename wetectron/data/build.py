@@ -110,12 +110,13 @@ def make_batch_data_sampler(
         aspect_ratios = _compute_aspect_ratios(dataset)
         group_ids = _quantize(aspect_ratios, aspect_grouping)
         batch_sampler = samplers.GroupedBatchSampler(
-            sampler, group_ids, images_per_batch, drop_uneven=False
+            sampler, group_ids, images_per_batch, dataset, args[0][0], args[0][1], drop_uneven=False
         )
     else:
         batch_sampler = torch.utils.data.sampler.BatchSampler(
             sampler, images_per_batch, drop_last=False
         )
+
 
     if class_batch and is_train:
         aspect_ratios = _compute_aspect_ratios(dataset)
@@ -192,6 +193,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     for dataset in datasets:
         #shuffle = False if cfg.SOLVER.CLASS_BATCH else True
         sampler = make_data_sampler(dataset, shuffle, is_distributed)  ##Randomsampler
+
         batch_sampler = make_batch_data_sampler(
             dataset, sampler, aspect_grouping, images_per_gpu, data_args, is_train,
             cfg.SOLVER.CLASS_BATCH, num_iters, start_iter
