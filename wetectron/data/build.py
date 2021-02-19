@@ -207,10 +207,12 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
             worker_init_fn=worker_init_reset_seed
         )
         data_loaders.append(data_loader)
+
     if is_train:
         # during training, a single (possibly concatenated) data_loader is returned
         assert len(data_loaders) == 1
         return data_loaders[0]
+
     return data_loaders
 
 def worker_init_reset_seed(worker_id):

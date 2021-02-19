@@ -121,20 +121,17 @@ class ClassBatchSampler(BatchSampler):
         img_labels = [0] * len(sampled_ids) * 2
 
         for i in sampled_ids:
-            #img_labels.append(self.get_img_labels(i).tolist())
             img_labels[i] = self.get_img_labels(i).tolist()
-        #import IPython; IPython.embed()
+
         for single in sampled_ids:
             if len(set(img_labels[single])) == 1:
-            #if len(set(self.get_img_labels(single))) ==1 :
                 for multi in sampled_ids:
                     if (set(img_labels[single]) & set(img_labels[multi])) and len(set(img_labels[multi])) > 1:
                     #if set(self.get_img_labels(single)) & set(self.get_img_labels(multi)) and len(set(self.get_img_labels(multi))) > 1:
                         c_batches.append([single,multi])
-                        #sampled_ids.remove(single)
                         sampled_ids.remove(multi)
                         break
-        #import IPython; IPython.embed()
+
         f_batches = list(itertools.chain(*batches))
         f_c_batches = list(itertools.chain(*c_batches))
         remain_ids = list((Counter(f_batches) - Counter(f_c_batches)).elements())
@@ -146,6 +143,7 @@ class ClassBatchSampler(BatchSampler):
                         #remain_ids.remove(inter_1)
                         remain_ids.remove(inter_2)
                         break
+
         ###
         #import IPython; IPython.embed()
         return c_batches

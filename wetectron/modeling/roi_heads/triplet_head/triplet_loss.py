@@ -20,6 +20,6 @@ class Triplet_Loss(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax()
     def forward(self, anchor, positive, negative):
-        output_l2 = self.triplet_loss(anchor, positive, negative)
-
-        return output_l2
+        output = self.triplet_loss(anchor, positive, negative)
+        #output = self.triplet_loss_l2(anchor, positive, negative)
+        return output
