@@ -95,17 +95,19 @@ class ROIWeakRegHead(torch.nn.Module):
         else:
             raise ValueError
 
-    def forward(self, features, proposals, targets=None, model_cdb=None):
+    def forward(self, images, features, proposals, targets=None, model_cdb=None):
         # for partial labels
         if self.roi_sampler is not None and self.training:
             with torch.no_grad():
                 proposals = self.roi_sampler(proposals, targets)
+
         roi_feats  = self.go_through_cdb(features, proposals, model_cdb)
+
         cls_score, det_score, ref_scores, ref_bbox_preds = self.predictor(roi_feats, proposals)
         if not self.training:
             result = self.testing_forward(cls_score, det_score, proposals, ref_scores, ref_bbox_preds)
             return roi_feats, result, {}, {}
-        loss_img, accuracy_img = self.loss_evaluator([cls_score], [det_score], ref_scores, ref_bbox_preds, proposals, targets)
+        loss_img, accuracy_img = self.loss_evaluator(images, [cls_score], [det_score], ref_scores, ref_bbox_preds, proposals, targets)
         return (roi_feats, proposals, loss_img, accuracy_img)
 
     def testing_forward(self, cls_score, det_score, proposals, ref_scores=None, ref_bbox_preds=None):

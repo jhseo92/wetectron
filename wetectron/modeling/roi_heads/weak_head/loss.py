@@ -5,14 +5,14 @@
 import torch
 from torch.nn import functional as F
 from torchvision import transforms, utils
-from matplotlib import pyplot as plt
-from PIL import Image
-import seaborn as sns
-import matplotlib.image as mpimg
-from matplotlib.colors import ListedColormap
+#from matplotlib import pyplot as plt
+#from PIL import Image
+#import seaborn as sns
+#import matplotlib.image as mpimg
+#from matplotlib.colors import ListedColormap
 import numpy as np
-from wetectron.modeling.heatmap import heatmap
-from PIL import ImageDraw
+#from wetectron.modeling.heatmap import heatmap
+#from PIL import ImageDraw
 
 from wetectron.layers import smooth_l1_loss
 from wetectron.modeling import registry
@@ -174,7 +174,7 @@ class RoILossComputation(object):
         else:
             raise ValueError('please use propoer ratio P.')
 
-    def __call__(self, img, class_score, det_score, ref_scores, proposals, targets, path, epsilon=1e-10):
+    def __call__(self, img, class_score, det_score, ref_scores, proposals, targets, epsilon=1e-10):
         """
         Arguments:
             class_score (list[Tensor])
@@ -226,7 +226,7 @@ class RoILossComputation(object):
             img_score_per_im = torch.clamp(torch.sum(final_score_per_im, dim=0), min=epsilon, max=1-epsilon)
             return_loss_dict['loss_img'] += F.binary_cross_entropy(img_score_per_im, labels_per_im.clamp(0, 1))
             update_score = cls_score_per_im * torch.sigmoid(det_sig_per_im)
-            import IPython; IPython.embed()
+            #import IPython; IPython.embed()
             _labels = labels_per_im[1:]
             positive_classes = torch.arange(_labels.shape[0])[_labels==1].to(device)
 
@@ -239,7 +239,7 @@ class RoILossComputation(object):
                 return_loss_dict['loss_ref%d'%i] += lmda * torch.mean(F.cross_entropy(ref_scores[i][idx], pseudo_labels, reduction='none') * loss_weights)
 
             ### visualization ###
-            fig = plt.figure()
+            '''fig = plt.figure()
             im = create_im(img, targets_per_im, positive_classes, proposals_per_image, device)
             cls_map, det_map, final_map, ref1_map, ref2_map, ref3_map = create_map(positive_classes, proposals_per_image, cls_score_per_im, det_score_per_im, final_score_per_im, source_scores, device)
 
@@ -265,7 +265,7 @@ class RoILossComputation(object):
                 fig.add_subplot(len(positive_classes), 7, (i*7) +7)
                 plt.imshow(im)
             import IPython; IPython.embed()
-
+            '''
             ### visualization ###
             with torch.no_grad():
                 return_acc_dict['acc_img'] += compute_avg_img_accuracy(labels_per_im, img_score_per_im, num_classes)
@@ -290,6 +290,7 @@ class RoIRegLossComputation(object):
             self.roi_layer = oicr_layer()
         elif refine_p > 0 and refine_p < 1:
             self.roi_layer = mist_layer(refine_p)
+
         else:
             raise ValueError('please use propoer ratio P.')
         # for regression
@@ -301,6 +302,7 @@ class RoIRegLossComputation(object):
         self.proposal_scribble_matcher = Matcher(
             0.5, 0.5, allow_low_quality_matches=False,
         )
+
 
     def filter_pseudo_labels(self, pseudo_labels, proposal, target):
         """ refine pseudo labels according to partial labels """
@@ -327,7 +329,8 @@ class RoIRegLossComputation(object):
 
         return pseudo_labels
 
-    def __call__(self, class_score, det_score, ref_scores, ref_bbox_preds, proposals, targets, epsilon=1e-10):
+    def __call__(self, img, class_score, det_score, ref_scores, ref_bbox_preds, proposals, targets, epsilon=1e-10):
+
         class_score = cat(class_score, dim=0)
         class_score = F.softmax(class_score, dim=1)
 
@@ -366,6 +369,7 @@ class RoIRegLossComputation(object):
             # Region loss
             for i in range(num_refs):
                 source_score = final_score_per_im if i == 0 else F.softmax(ref_scores[i-1][idx], dim=1)
+
                 pseudo_labels, loss_weights, regression_targets = self.roi_layer(
                     proposals_per_image, source_score, labels_per_im, device, return_targets=True
                 )

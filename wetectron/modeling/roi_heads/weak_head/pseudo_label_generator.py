@@ -103,7 +103,7 @@ class oicr_layer(object):
             gt_classes = torch.cat((gt_classes, c.add(1).view(1, 1)), dim=0)
             gt_scores = torch.cat((gt_scores, cls_prob[max_index].view(1, 1)), dim=0)
             _prob[max_index].fill_(0)
-
+        import IPython; IPython.embed()
         if return_targets == True:
             gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
             gt_boxes.add_field('labels',  gt_classes[:, 0].float())
@@ -115,6 +115,7 @@ class oicr_layer(object):
             pseudo_labels = torch.zeros(num_rois, dtype=torch.long, device=device)
             loss_weights = torch.zeros(num_rois, dtype=torch.float, device=device)
         else:
+            import IPython; IPython.embed()
             gt_boxes = BoxList(gt_boxes, proposals.size, mode=proposals.mode)
             overlaps = boxlist_iou(proposals, gt_boxes)
             max_overlaps, gt_assignment = overlaps.max(dim=1)

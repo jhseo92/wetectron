@@ -59,7 +59,7 @@ class GeneralizedRCNN(nn.Module):
             proposals, proposal_losses = self.rpn(images, features, targets)
 
         if self.roi_heads:
-            x, result, detector_losses, accuracy = self.roi_heads(images, features, proposals, targets, model_cdb, path)
+            x, result, detector_losses, accuracy = self.roi_heads(images, features, proposals, targets, model_cdb)
         else:
             # RPN-only models don't have roi_heads
             x = features
